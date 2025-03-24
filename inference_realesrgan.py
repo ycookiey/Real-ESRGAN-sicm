@@ -1,10 +1,11 @@
 import argparse
+import numpy as np
 import cv2
 import glob
 import os
 from basicsr.archs.rrdbnet_arch import RRDBNet
 from basicsr.utils.download_util import load_file_from_url
-
+import pandas as pd
 from realesrgan import RealESRGANer
 from realesrgan.archs.srvgg_arch import SRVGGNetCompact
 
@@ -13,7 +14,7 @@ def main():
     """Inference demo for Real-ESRGAN.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--input', type=str, default='inputs', help='Input image or folder')
+    parser.add_argument('-i', '--input', type=str, default='inputs', help='Input image, CSV file or folder')
     parser.add_argument(
         '-n',
         '--model_name',
@@ -133,8 +134,19 @@ def main():
     for idx, path in enumerate(paths):
         imgname, extension = os.path.splitext(os.path.basename(path))
         print('Testing', idx, imgname)
+        if extension == '.csv':
+            df = pd.read_csv(path, header=None)
+            data = df.values.astype(np.float32)
 
-        img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+            original_max = data.max()
+            original_min = data.min()
+
+            data_normalized = ((data - original_min) / (original_max - original_min) * 255.0)
+            img = np.stack([data_normalized] * 3, axis=2)
+        else:
+            img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+
+
         if len(img.shape) == 3 and img.shape[2] == 4:
             img_mode = 'RGBA'
         else:
@@ -159,7 +171,13 @@ def main():
                 save_path = os.path.join(args.output, f'{imgname}.{extension}')
             else:
                 save_path = os.path.join(args.output, f'{imgname}_{args.suffix}.{extension}')
-            cv2.imwrite(save_path, output)
+            if extension=='csv':
+                output = output.mean(axis=2)
+                output = (output / 255.0) * (original_max - original_min) + original_min
+                output_df = pd.DataFrame(output)
+                output_df.to_csv(save_path, header=False, index=False)
+            else:
+                cv2.imwrite(save_path, output)
 
 
 if __name__ == '__main__':
