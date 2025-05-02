@@ -264,7 +264,8 @@ class RealESRGANCSVDataset(data.Dataset):
         gt_path = self.paths[index]
         try:
             data = pd.read_csv(gt_path, header=None).to_numpy()
-            img_gt = data.astype(np.float32)
+            data_normalized = (data - data.min()) / (data.max() - data.min())
+            img_gt = data_normalized.astype(np.float32)
 
             img_gt = np.stack([img_gt] * 3, axis=2).copy()
         except Exception as e:
