@@ -4,19 +4,17 @@ from tkinter import ttk, filedialog, scrolledtext, messagebox
 import traceback
 from typing import Optional, Dict, Any, List
 
-
 from constants import SCALE_CONFIGS_DEFAULT
-from experiment_manager import (
-    ExperimentManager,
-)
+from experiment_manager import ExperimentManager
 from inference_runner import run_realesrgan_inference
 from path_config import PathConfig
+from image_comparison_ui import ImageComparisonUI
 
 
 class RealESRGANGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("RealESRGAN CSV推論ツール (設定管理付き)")
+        self.root.title("RealESRGAN CSV推論・画像比較ツール")
         self.root.geometry("1100x850")
 
         self.path_config = PathConfig()
@@ -57,7 +55,23 @@ class RealESRGANGUI:
         self.widgets = {}
         self.options_visible = tk.BooleanVar(value=False)
 
-        self.create_widgets()
+        # Create tabbed interface
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # Create inference tab (original functionality)
+        inference_tab = ttk.Frame(self.notebook)
+        self.notebook.add(inference_tab, text="推論実行")
+
+        # Create comparison tab (new functionality)
+        comparison_tab = ttk.Frame(self.notebook)
+        self.notebook.add(comparison_tab, text="画像比較")
+
+        # Initialize inference tab
+        self.create_inference_widgets(inference_tab)
+
+        # Initialize comparison tab
+        self.comparison_ui = ImageComparisonUI(comparison_tab, self.root, self.log)
 
         self.config_manual["scale"].trace_add("write", self.on_scale_change)
         self.config_manual["execution_mode"].trace_add(
@@ -71,17 +85,15 @@ class RealESRGANGUI:
         if first_item_iid:
             self.on_treeview_select(None)
 
-    def create_widgets(self):
-
-        settings_container = ttk.Frame(self.root, padding=5)
+    def create_inference_widgets(self, parent_container):
+        settings_container = ttk.Frame(parent_container, padding=5)
         settings_container.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(5, 0))
-        execution_container = ttk.Frame(self.root, padding=5)
+        execution_container = ttk.Frame(parent_container, padding=5)
         execution_container.pack(
             side=tk.BOTTOM, fill=tk.BOTH, expand=True, padx=5, pady=(0, 5)
         )
 
         self.create_settings_widgets(settings_container)
-
         self.create_execution_widgets(execution_container)
 
     def create_settings_widgets(self, parent_container):
