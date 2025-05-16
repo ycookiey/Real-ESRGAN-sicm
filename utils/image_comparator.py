@@ -337,17 +337,17 @@ class ImageComparator:
         images: Dict[str, np.ndarray],
         metrics: Dict[str, Dict[str, float]],
     ) -> np.ndarray:
-
-        preferred_order = ["lr", "bicubic", "sr", "hr"]
+        preferred_order = ["lr", "bicubic", "hr"]
 
         def sort_key(category):
-            if category in preferred_order:
-                return preferred_order.index(category)
-
-            for i, prefix in enumerate(preferred_order):
-                if category.startswith(prefix):
-                    return i + 0.5
-            return len(preferred_order)
+            if category == "lr":
+                return 0
+            elif category == "bicubic":
+                return 1
+            elif category == "hr":
+                return 1000
+            else:
+                return 500
 
         categories = sorted(images.keys(), key=sort_key)
 
@@ -358,6 +358,8 @@ class ImageComparator:
         canvas = FigureCanvasAgg(fig)
 
         fig.suptitle(true_name, fontsize=16)
+
+        fig.subplots_adjust(wspace=0, hspace=0, left=0, right=1, top=0.95, bottom=0.05)
 
         axes = []
         for i, category in enumerate(categories):
@@ -382,8 +384,6 @@ class ImageComparator:
 
             ax.set_title(label_text)
             ax.axis("off")
-
-        fig.tight_layout(rect=[0, 0.03, 1, 0.95])
 
         canvas.draw()
         width, height = fig.get_size_inches() * fig.get_dpi()

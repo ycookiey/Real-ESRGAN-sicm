@@ -45,14 +45,12 @@ class FolderSelector:
         self.folder_vars = {
             "lr": tk.StringVar(),
             "bicubic": tk.StringVar(),
-            "sr": tk.StringVar(),
             "hr": tk.StringVar(),
         }
 
         folder_labels = {
             "lr": "低解像度 (LR):",
             "bicubic": "Bicubic補間:",
-            "sr": "超解像 (SR):",
             "hr": "高解像度 (HR):",
         }
 
@@ -202,10 +200,6 @@ class FolderSelector:
         self.folder_vars["hr"].set(scale_config.get("hr_dir", ""))
         self.folder_vars["bicubic"].set(scale_config.get("bicubic_dir", ""))
 
-        sr_dir = scale_config.get("sr_dir", "")
-        if sr_dir:
-            self.folder_vars["sr"].set(sr_dir)
-
     def get_all_folders(self):
         folder_dict = {}
 
@@ -228,7 +222,6 @@ class FolderSelector:
             "lr_dir": self.folder_vars["lr"].get(),
             "hr_dir": self.folder_vars["hr"].get(),
             "bicubic_dir": self.folder_vars["bicubic"].get(),
-            "sr_dir": self.folder_vars["sr"].get(),
         }
 
         self.path_config.update_scale_config(scale, paths_config)
