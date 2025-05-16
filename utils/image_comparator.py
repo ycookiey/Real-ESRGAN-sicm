@@ -51,7 +51,9 @@ class ImageComparator:
             return np.zeros_like(img, dtype=np.float32)
         return (img - img.min()) / (img.max() - img.min())
 
-    def load_and_preprocess_file(self, file_path: str) -> np.ndarray:
+    def load_and_preprocess_file(
+        self, file_path: str, resize_to_target=False
+    ) -> np.ndarray:
         if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
 
             img = cv2.imread(file_path)
@@ -84,12 +86,23 @@ class ImageComparator:
         else:
             raise ValueError(f"サポートされていないファイル形式: {file_path}")
 
-        if img.shape[:2] != self.target_size:
-            img = cv2.resize(
-                img,
-                (self.target_size[0], self.target_size[1]),
-                interpolation=cv2.INTER_CUBIC,
-            )
+        if resize_to_target and img.shape[:2] != self.target_size:
+
+            h_target, w_target = self.target_size
+            h_orig, w_orig = img.shape[:2]
+
+            h_repeat = (h_target + h_orig - 1) // h_orig
+            w_repeat = (w_target + w_orig - 1) // w_orig
+
+            resized_img = np.zeros((h_target, w_target, img.shape[2]), dtype=np.float32)
+            for c in range(img.shape[2]):
+
+                repeated = np.repeat(
+                    np.repeat(img[:, :, c], h_repeat, axis=0), w_repeat, axis=1
+                )
+                resized_img[:, :, c] = repeated[:h_target, :w_target]
+
+            return resized_img
 
         return img
 
@@ -123,7 +136,6 @@ class ImageComparator:
             and suffix
             and len(prefix) + len(suffix) >= min(len(name) for name in base_names)
         ):
-
             return prefix, ""
 
         return prefix, suffix
@@ -139,29 +151,29 @@ class ImageComparator:
                 h, w = img2_norm.shape[:2]
                 img1_resized = np.zeros_like(img2_norm)
                 for c in range(3):
-                    img1_resized[:, :, c] = np.repeat(
-                        np.repeat(
-                            img1_norm[:, :, c],
-                            (h + img1_norm.shape[0] - 1) // img1_norm.shape[0],
-                            axis=0,
-                        )[:h],
-                        (w + img1_norm.shape[1] - 1) // img1_norm.shape[1],
+
+                    h_repeat = (h + img1_norm.shape[0] - 1) // img1_norm.shape[0]
+                    w_repeat = (w + img1_norm.shape[1] - 1) // img1_norm.shape[1]
+                    temp = np.repeat(
+                        np.repeat(img1_norm[:, :, c], h_repeat, axis=0),
+                        w_repeat,
                         axis=1,
-                    )[:, :w]
+                    )
+                    img1_resized[:, :, c] = temp[:h, :w]
                 img1_norm = img1_resized
             else:
                 h, w = img1_norm.shape[:2]
                 img2_resized = np.zeros_like(img1_norm)
                 for c in range(3):
-                    img2_resized[:, :, c] = np.repeat(
-                        np.repeat(
-                            img2_norm[:, :, c],
-                            (h + img2_norm.shape[0] - 1) // img2_norm.shape[0],
-                            axis=0,
-                        )[:h],
-                        (w + img2_norm.shape[1] - 1) // img2_norm.shape[1],
+
+                    h_repeat = (h + img2_norm.shape[0] - 1) // img2_norm.shape[0]
+                    w_repeat = (w + img2_norm.shape[1] - 1) // img2_norm.shape[1]
+                    temp = np.repeat(
+                        np.repeat(img2_norm[:, :, c], h_repeat, axis=0),
+                        w_repeat,
                         axis=1,
-                    )[:, :w]
+                    )
+                    img2_resized[:, :, c] = temp[:h, :w]
                 img2_norm = img2_resized
 
         metrics = {}
@@ -266,29 +278,39 @@ class ImageComparator:
 
             self.log(f"処理中 ({i+1}/{total_groups}): {true_name}")
 
-            images = {}
+            original_images = {}
+
+            display_images = {}
+
             for category, file_path in category_files.items():
                 try:
-                    images[category] = self.load_and_preprocess_file(file_path)
+
+                    original_images[category] = self.load_and_preprocess_file(
+                        file_path, resize_to_target=False
+                    )
+
+                    display_images[category] = self.load_and_preprocess_file(
+                        file_path, resize_to_target=True
+                    )
                 except Exception as e:
                     self.log(
                         f"エラー: {true_name}の{category}画像を読み込めません: {e}"
                     )
 
-                    images[category] = np.zeros(
-                        (self.target_size[1], self.target_size[0], 3)
-                    )
+                    zero_img = np.zeros((self.target_size[1], self.target_size[0], 3))
+                    original_images[category] = zero_img
+                    display_images[category] = zero_img
 
-            if "hr" in images:
-                hr_img = images["hr"]
-                for category, img in images.items():
+            if "hr" in original_images:
+                hr_img = original_images["hr"]
+                for category, img in original_images.items():
                     if category != "hr":
                         results["metrics"][true_name][category] = (
                             self.calculate_metrics(hr_img, img)
                         )
 
             vis_img = self.create_comparison_visualization(
-                true_name, images, results["metrics"].get(true_name, {})
+                true_name, display_images, results["metrics"].get(true_name, {})
             )
             results["visualizations"][true_name] = vis_img
 
