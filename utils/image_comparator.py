@@ -357,9 +357,9 @@ class ImageComparator:
         fig = Figure(figsize=(fig_width, fig_height), dpi=100)
         canvas = FigureCanvasAgg(fig)
 
-        fig.suptitle(true_name, fontsize=16)
+        fig.suptitle(true_name, fontsize=16, y=0.98)
 
-        fig.subplots_adjust(wspace=0, hspace=0, left=0, right=1, top=0.95, bottom=0.05)
+        fig.subplots_adjust(wspace=0, hspace=0, left=0, right=1, top=0.9, bottom=0.1)
 
         axes = []
         for i, category in enumerate(categories):
@@ -372,17 +372,28 @@ class ImageComparator:
 
             ax.imshow(img)
 
-            label_text = category
+            ax.set_title(category)
 
             if category in metrics:
-                metric_text = f"PSNR: {metrics[category]['psnr']:.2f}\nSSIM: {metrics[category]['ssim']:.4f}"
-                if "lpips" in metrics[category] and not np.isnan(
-                    metrics[category]["lpips"]
-                ):
-                    metric_text += f"\nLPIPS: {metrics[category]['lpips']:.4f}"
-                label_text += f"\n{metric_text}"
 
-            ax.set_title(label_text)
+                psnr_val = metrics[category].get("psnr", float("nan"))
+                ssim_val = metrics[category].get("ssim", float("nan"))
+                lpips_val = metrics[category].get("lpips", float("nan"))
+
+                metric_text = f"P:{psnr_val:.2f}  S:{ssim_val:.3f}"
+                if not np.isnan(lpips_val):
+                    metric_text += f"  L:{lpips_val:.3f}"
+
+                ax.text(
+                    0.5,
+                    -0.05,
+                    metric_text,
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="top",
+                    fontsize=9,
+                )
+
             ax.axis("off")
 
         canvas.draw()
@@ -405,15 +416,27 @@ class ImageComparator:
         padded_vis = []
 
         for vis in visualizations:
-            h, w, c = vis.shape
+
+            vis_norm = self.normalize(vis)
+            h, w, c = vis_norm.shape
+
             if w < max_width:
                 padding = np.ones((h, max_width - w, c))
-                padded = np.hstack([vis, padding])
-                padded_vis.append(padded)
+                padded = np.hstack([vis_norm, padding])
             else:
-                padded_vis.append(vis)
+                padded = vis_norm
+
+            separator = np.ones((8, max_width, c))
+
+            padded_vis.append(padded)
+            padded_vis.append(separator)
+
+        if padded_vis and len(padded_vis) > 1:
+            padded_vis.pop()
 
         combined = np.vstack(padded_vis)
+
+        combined = self.normalize(combined)
 
         if output_path:
             plt.imsave(output_path, combined)
