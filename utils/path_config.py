@@ -153,10 +153,12 @@ class PathConfig:
 
         return config
 
-    def get_custom_folder_history(self) -> List[Dict[str, str]]:
+    def get_custom_folder_history(self) -> List[Dict[str, Any]]:
         return self.config.get("custom_folder_history", [])
 
-    def update_custom_folder_history(self, folder_name: str, folder_path: str) -> bool:
+    def update_custom_folder_history(
+        self, folder_name: str, folder_path: str, checked: bool = True
+    ) -> bool:
         history = self.get_custom_folder_history()
 
         history = [
@@ -165,35 +167,42 @@ class PathConfig:
             if not (item.get("name") == folder_name and item.get("path") == folder_path)
         ]
 
-        history.insert(0, {"name": folder_name, "path": folder_path})
+        history.insert(
+            0, {"name": folder_name, "path": folder_path, "checked": checked}
+        )
 
         self.config["custom_folder_history"] = history
         return self.save_config(self.config)
 
-    def save_custom_folder_history(self, folders_dict: Dict[str, str]) -> bool:
+    def save_custom_folder_history(
+        self, folders_dict: Dict[str, Dict[str, Any]]
+    ) -> bool:
 
-        history = self.get_custom_folder_history()
+        history = []
 
-        new_history = []
-
-        for name, path in folders_dict.items():
+        for name, info in folders_dict.items():
+            path = info.get("path", "")
+            checked = info.get("checked", True)
             if os.path.isdir(path):
-                new_history.append({"name": name, "path": path})
+                history.append({"name": name, "path": path, "checked": checked})
 
-        for item in history:
+        existing_history = self.get_custom_folder_history()
+        for item in existing_history:
             name = item.get("name", "")
             path = item.get("path", "")
+            checked = item.get("checked", True)
 
             if (
                 name
                 and path
                 and not any(
-                    h.get("name") == name and h.get("path") == path for h in new_history
+                    h.get("name") == name and h.get("path") == path for h in history
                 )
             ):
-                new_history.append(item)
+                if os.path.isdir(path):
+                    history.append({"name": name, "path": path, "checked": checked})
 
-        self.config["custom_folder_history"] = new_history
+        self.config["custom_folder_history"] = history
         return self.save_config(self.config)
 
     def get_latest_custom_folder_path(self) -> str:
