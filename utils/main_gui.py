@@ -55,22 +55,17 @@ class RealESRGANGUI:
         self.widgets = {}
         self.options_visible = tk.BooleanVar(value=False)
 
-        # Create tabbed interface
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Create inference tab (original functionality)
         inference_tab = ttk.Frame(self.notebook)
         self.notebook.add(inference_tab, text="推論実行")
 
-        # Create comparison tab (new functionality)
         comparison_tab = ttk.Frame(self.notebook)
         self.notebook.add(comparison_tab, text="画像比較")
 
-        # Initialize inference tab
         self.create_inference_widgets(inference_tab)
 
-        # Initialize comparison tab
         self.comparison_ui = ImageComparisonUI(comparison_tab, self.root, self.log)
 
         self.config_manual["scale"].trace_add("write", self.on_scale_change)
@@ -828,12 +823,46 @@ def main():
 
     def on_closing():
         try:
+
             if hasattr(app, "exp_manager") and app.exp_manager:
                 app.exp_manager.save_data()
+                print("実験データを保存しました")
 
-            app.save_paths()
+            if (
+                hasattr(app, "comparison_ui")
+                and app.comparison_ui
+                and hasattr(app.comparison_ui, "folder_selector")
+                and app.comparison_ui.folder_selector
+            ):
+
+                folder_selector = app.comparison_ui.folder_selector
+                custom_folders = folder_selector.custom_folders
+
+                print(f"カスタムフォルダを保存します: {len(custom_folders)}件")
+                for name, path in custom_folders.items():
+                    print(f"  - {name}: {path}")
+
+                if hasattr(app, "path_config") and app.path_config:
+                    app.path_config.save_custom_folder_history(custom_folders)
+                    print("カスタムフォルダ履歴を保存しました")
+
+                folder_selector.save_comparison_paths()
+                print("比較パス設定を保存しました")
+
+            if hasattr(app, "save_paths"):
+                app.save_paths()
+                print("パス設定を保存しました")
+
+            if hasattr(app, "path_config") and app.path_config:
+                config = app.path_config.config
+                app.path_config.save_config(config)
+                print("すべての設定を保存しました")
+
         except Exception as e:
             print(f"終了時のデータ保存中にエラー: {e}")
+            import traceback
+
+            traceback.print_exc()
         finally:
             root.destroy()
 

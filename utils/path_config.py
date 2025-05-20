@@ -1,7 +1,7 @@
 import json
 import os
 import sys
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 
 class PathConfig:
@@ -25,6 +25,7 @@ class PathConfig:
                     "csv_output_dir": "x4csvcsv_128_finetuned",
                 },
             },
+            "custom_folder_history": [],
         }
         self.config = self.load_config()
 
@@ -64,13 +65,34 @@ class PathConfig:
                 target[key] = value
 
     def save_config(self, config: Dict[str, Any]) -> bool:
-
         try:
+
+            existing_history = []
+            if os.path.exists(self.config_file):
+                try:
+                    with open(self.config_file, "r", encoding="utf-8") as f:
+                        existing_config = json.load(f)
+                        if "custom_folder_history" in existing_config:
+                            existing_history = existing_config.get(
+                                "custom_folder_history", []
+                            )
+                except Exception:
+                    pass
+
+            if (
+                "custom_folder_history" not in config
+                or not config["custom_folder_history"]
+            ):
+                config["custom_folder_history"] = existing_history
+
             with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=4, ensure_ascii=False)
             return True
         except Exception as e:
             print(f"設定ファイル保存エラー: {e}")
+            import traceback
+
+            traceback.print_exc()
             return False
 
     def get_path(self, key: str) -> str:
@@ -130,3 +152,52 @@ class PathConfig:
                     )
 
         return config
+
+    def get_custom_folder_history(self) -> List[Dict[str, str]]:
+        return self.config.get("custom_folder_history", [])
+
+    def update_custom_folder_history(self, folder_name: str, folder_path: str) -> bool:
+        history = self.get_custom_folder_history()
+
+        history = [
+            item
+            for item in history
+            if not (item.get("name") == folder_name and item.get("path") == folder_path)
+        ]
+
+        history.insert(0, {"name": folder_name, "path": folder_path})
+
+        self.config["custom_folder_history"] = history
+        return self.save_config(self.config)
+
+    def save_custom_folder_history(self, folders_dict: Dict[str, str]) -> bool:
+
+        history = self.get_custom_folder_history()
+
+        new_history = []
+
+        for name, path in folders_dict.items():
+            if os.path.isdir(path):
+                new_history.append({"name": name, "path": path})
+
+        for item in history:
+            name = item.get("name", "")
+            path = item.get("path", "")
+
+            if (
+                name
+                and path
+                and not any(
+                    h.get("name") == name and h.get("path") == path for h in new_history
+                )
+            ):
+                new_history.append(item)
+
+        self.config["custom_folder_history"] = new_history
+        return self.save_config(self.config)
+
+    def get_latest_custom_folder_path(self) -> str:
+        history = self.get_custom_folder_history()
+        if history:
+            return history[0].get("path", "")
+        return self.get_path("working_dir")

@@ -16,6 +16,8 @@ class FolderSelector:
 
         self.frame = self._create_folder_frame()
 
+        self._load_custom_folder_history()
+
         self._update_default_paths()
 
     def _create_folder_frame(self):
@@ -129,14 +131,23 @@ class FolderSelector:
         ).grid(row=0, column=1, padx=(5, 0))
 
     def _browse_directory(self, var):
-        initial_dir = var.get()
+
+        current_path = var.get()
+
+        initial_dir = current_path
 
         if not os.path.isdir(initial_dir):
-            initial_dir = os.path.dirname(initial_dir)
-        if not os.path.isdir(initial_dir):
-            initial_dir = os.path.expanduser("~")
-        if not os.path.isdir(initial_dir):
-            initial_dir = "/"
+            latest_path = self.path_config.get_latest_custom_folder_path()
+            if os.path.isdir(latest_path):
+                initial_dir = latest_path
+            else:
+
+                working_dir = self.path_config.get_path("working_dir")
+                initial_dir = (
+                    working_dir
+                    if os.path.isdir(working_dir)
+                    else os.path.expanduser("~")
+                )
 
         directory = filedialog.askdirectory(
             initialdir=initial_dir, title="ディレクトリ選択", parent=self.root
@@ -144,6 +155,30 @@ class FolderSelector:
 
         if directory:
             var.set(directory)
+
+    def _load_custom_folder_history(self):
+
+        self.custom_folders_listbox.delete(0, tk.END)
+
+        self.custom_folders.clear()
+
+        history = self.path_config.get_custom_folder_history()
+        self.log(f"カスタムフォルダ履歴を読み込み: {len(history)}件")
+
+        for item in history:
+            name = item.get("name")
+            path = item.get("path")
+            if name and path:
+
+                if os.path.isdir(path):
+                    self.custom_folders[name] = path
+                    self.custom_folders_listbox.insert(tk.END, f"{name}: {path}")
+                    self.log(f"カスタムフォルダを追加: {name} -> {path}")
+                else:
+                    self.log(f"無効なパスのためスキップ: {name} -> {path}")
+
+        if self.custom_folders:
+            self.path_config.save_custom_folder_history(self.custom_folders)
 
     def _add_custom_folder(self):
         name = self.custom_folder_name.get().strip()
@@ -170,10 +205,17 @@ class FolderSelector:
             return
 
         self.custom_folders[name] = path
+
         self.custom_folders_listbox.insert(tk.END, f"{name}: {path}")
+
+        self.path_config.update_custom_folder_history(name, path)
+
+        self.log(f"カスタムフォルダを追加: {name} -> {path}")
 
         self.custom_folder_name.set("")
         self.custom_folder_path.set("")
+
+        self.path_config.save_custom_folder_history(self.custom_folders)
 
     def _remove_custom_folder(self):
         selection = self.custom_folders_listbox.curselection()
@@ -225,4 +267,7 @@ class FolderSelector:
         }
 
         self.path_config.update_scale_config(scale, paths_config)
-        self.log(f"スケール {scale} の比較パス設定を保存しました")
+
+        self.path_config.save_custom_folder_history(self.custom_folders)
+
+        self.log(f"スケール {scale} の比較パス設定とカスタムフォルダ履歴を保存しました")
