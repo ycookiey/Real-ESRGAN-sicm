@@ -56,10 +56,9 @@ class ImageComparator:
     ) -> np.ndarray:
         if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
 
-            img = cv2.imread(file_path)
+            img = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
             if img is None:
                 raise ValueError(f"画像の読み込みに失敗: {file_path}")
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
             img = img.astype(np.float32)
             img = self.normalize(img)
@@ -71,36 +70,27 @@ class ImageComparator:
                     reader = csv.reader(f)
                     data = list(reader)
 
-                data = np.array(
+                img = np.array(
                     [[float(val) for val in row] for row in data], dtype=np.float32
                 )
 
-                data = self.normalize(data)
-
-                if len(data.shape) == 2:
-                    img = np.stack([data, data, data], axis=2)
-                else:
-                    img = data
+                img = self.normalize(img)
             except Exception as e:
                 raise ValueError(f"CSVの読み込みに失敗: {file_path} - {e}")
         else:
             raise ValueError(f"サポートされていないファイル形式: {file_path}")
 
-        if resize_to_target and img.shape[:2] != self.target_size:
+        if resize_to_target and img.shape != self.target_size:
 
             h_target, w_target = self.target_size
-            h_orig, w_orig = img.shape[:2]
+            h_orig, w_orig = img.shape
 
             h_repeat = (h_target + h_orig - 1) // h_orig
             w_repeat = (w_target + w_orig - 1) // w_orig
 
-            resized_img = np.zeros((h_target, w_target, img.shape[2]), dtype=np.float32)
-            for c in range(img.shape[2]):
+            resized_img = np.repeat(np.repeat(img, h_repeat, axis=0), w_repeat, axis=1)
 
-                repeated = np.repeat(
-                    np.repeat(img[:, :, c], h_repeat, axis=0), w_repeat, axis=1
-                )
-                resized_img[:, :, c] = repeated[:h_target, :w_target]
+            resized_img = resized_img[:h_target, :w_target]
 
             return resized_img
 
@@ -147,33 +137,31 @@ class ImageComparator:
 
         if img1_norm.shape != img2_norm.shape:
 
-            if np.prod(img1_norm.shape[:2]) < np.prod(img2_norm.shape[:2]):
-                h, w = img2_norm.shape[:2]
+            if np.prod(img1_norm.shape) < np.prod(img2_norm.shape):
+                h, w = img2_norm.shape
                 img1_resized = np.zeros_like(img2_norm)
-                for c in range(3):
 
-                    h_repeat = (h + img1_norm.shape[0] - 1) // img1_norm.shape[0]
-                    w_repeat = (w + img1_norm.shape[1] - 1) // img1_norm.shape[1]
-                    temp = np.repeat(
-                        np.repeat(img1_norm[:, :, c], h_repeat, axis=0),
-                        w_repeat,
-                        axis=1,
-                    )
-                    img1_resized[:, :, c] = temp[:h, :w]
+                h_repeat = (h + img1_norm.shape[0] - 1) // img1_norm.shape[0]
+                w_repeat = (w + img1_norm.shape[1] - 1) // img1_norm.shape[1]
+                temp = np.repeat(
+                    np.repeat(img1_norm, h_repeat, axis=0),
+                    w_repeat,
+                    axis=1,
+                )
+                img1_resized = temp[:h, :w]
                 img1_norm = img1_resized
             else:
-                h, w = img1_norm.shape[:2]
+                h, w = img1_norm.shape
                 img2_resized = np.zeros_like(img1_norm)
-                for c in range(3):
 
-                    h_repeat = (h + img2_norm.shape[0] - 1) // img2_norm.shape[0]
-                    w_repeat = (w + img2_norm.shape[1] - 1) // img2_norm.shape[1]
-                    temp = np.repeat(
-                        np.repeat(img2_norm[:, :, c], h_repeat, axis=0),
-                        w_repeat,
-                        axis=1,
-                    )
-                    img2_resized[:, :, c] = temp[:h, :w]
+                h_repeat = (h + img2_norm.shape[0] - 1) // img2_norm.shape[0]
+                w_repeat = (w + img2_norm.shape[1] - 1) // img2_norm.shape[1]
+                temp = np.repeat(
+                    np.repeat(img2_norm, h_repeat, axis=0),
+                    w_repeat,
+                    axis=1,
+                )
+                img2_resized = temp[:h, :w]
                 img2_norm = img2_resized
 
         metrics = {}
@@ -185,9 +173,8 @@ class ImageComparator:
             metrics["psnr"] = float("nan")
 
         try:
-            metrics["ssim"] = ssim(
-                img1_norm, img2_norm, multichannel=True, channel_axis=2
-            )
+
+            metrics["ssim"] = ssim(img1_norm, img2_norm, data_range=1.0)
         except Exception as e:
             self.log(f"SSIMの計算中にエラー: {e}")
             metrics["ssim"] = float("nan")
@@ -195,11 +182,14 @@ class ImageComparator:
         if self.lpips_model is not None:
             try:
 
+                img1_rgb = np.stack([img1_norm, img1_norm, img1_norm], axis=2)
+                img2_rgb = np.stack([img2_norm, img2_norm, img2_norm], axis=2)
+
                 img1_tensor = (
-                    torch.from_numpy(img1_norm).permute(2, 0, 1).unsqueeze(0) * 2 - 1
+                    torch.from_numpy(img1_rgb).permute(2, 0, 1).unsqueeze(0) * 2 - 1
                 )
                 img2_tensor = (
-                    torch.from_numpy(img2_norm).permute(2, 0, 1).unsqueeze(0) * 2 - 1
+                    torch.from_numpy(img2_rgb).permute(2, 0, 1).unsqueeze(0) * 2 - 1
                 )
 
                 with torch.no_grad():
@@ -279,12 +269,10 @@ class ImageComparator:
             self.log(f"処理中 ({i+1}/{total_groups}): {true_name}")
 
             original_images = {}
-
             display_images = {}
 
             for category, file_path in category_files.items():
                 try:
-
                     original_images[category] = self.load_and_preprocess_file(
                         file_path, resize_to_target=False
                     )
@@ -297,7 +285,7 @@ class ImageComparator:
                         f"エラー: {true_name}の{category}画像を読み込めません: {e}"
                     )
 
-                    zero_img = np.zeros((self.target_size[1], self.target_size[0], 3))
+                    zero_img = np.zeros(self.target_size)
                     original_images[category] = zero_img
                     display_images[category] = zero_img
 
@@ -317,7 +305,7 @@ class ImageComparator:
             if output_dir:
                 os.makedirs(output_dir, exist_ok=True)
                 output_path = os.path.join(output_dir, f"{true_name}_comparison.png")
-                plt.imsave(output_path, vis_img)
+                plt.imsave(output_path, vis_img, cmap="gray")
 
         if output_dir and results["visualizations"]:
             all_vis = list(results["visualizations"].values())
@@ -370,12 +358,11 @@ class ImageComparator:
             if img.min() < 0 or img.max() > 1:
                 img = self.normalize(img)
 
-            ax.imshow(img)
+            ax.imshow(img, cmap="gray")
 
             ax.set_title(category)
 
             if category in metrics:
-
                 psnr_val = metrics[category].get("psnr", float("nan"))
                 ssim_val = metrics[category].get("ssim", float("nan"))
                 lpips_val = metrics[category].get("lpips", float("nan"))
@@ -402,31 +389,30 @@ class ImageComparator:
             int(height), int(width), 4
         )
 
-        image = image[:, :, :3]
+        image_gray = np.mean(image[:, :, :3], axis=2).astype(np.uint8)
 
-        return image
+        return image_gray
 
     def create_combined_visualization(
         self, visualizations: List[np.ndarray], output_path: Optional[str] = None
     ) -> np.ndarray:
         if not visualizations:
-            return np.zeros((100, 100, 3))
+            return np.zeros((100, 100))
 
         max_width = max(v.shape[1] for v in visualizations)
         padded_vis = []
 
         for vis in visualizations:
-
             vis_norm = self.normalize(vis)
-            h, w, c = vis_norm.shape
+            h, w = vis_norm.shape
 
             if w < max_width:
-                padding = np.ones((h, max_width - w, c))
+                padding = np.ones((h, max_width - w))
                 padded = np.hstack([vis_norm, padding])
             else:
                 padded = vis_norm
 
-            separator = np.ones((8, max_width, c))
+            separator = np.ones((8, max_width))
 
             padded_vis.append(padded)
             padded_vis.append(separator)
@@ -435,11 +421,10 @@ class ImageComparator:
             padded_vis.pop()
 
         combined = np.vstack(padded_vis)
-
         combined = self.normalize(combined)
 
         if output_path:
-            plt.imsave(output_path, combined)
+            plt.imsave(output_path, combined, cmap="gray")
 
         return combined
 
