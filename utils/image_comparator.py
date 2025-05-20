@@ -369,7 +369,7 @@ class ImageComparator:
 
                 metric_text = f"P:{psnr_val:.2f}  S:{ssim_val:.3f}"
                 if not np.isnan(lpips_val):
-                    metric_text += f"  L:{lpips_val:.3f}"
+                    metric_text += f"  1-L:{lpips_val:.3f}"
 
                 ax.text(
                     0.5,
