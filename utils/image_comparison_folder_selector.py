@@ -1,7 +1,79 @@
 import os
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 from typing import Dict, Callable, Any
+
+
+class FolderEditDialog(simpledialog.Dialog):
+
+    def __init__(self, parent, title="フォルダ編集", initial_name="", initial_path=""):
+        self.initial_name = initial_name
+        self.initial_path = initial_path
+        self.name_entry = None
+        self.path_entry = None
+        self.path_var = tk.StringVar(value=initial_path)
+        self.result = None
+        super().__init__(parent, title)
+
+    def body(self, master):
+        master.columnconfigure(1, weight=1)
+
+        ttk.Label(master, text="フォルダ名:").grid(
+            row=0, column=0, sticky=tk.W, padx=5, pady=5
+        )
+        self.name_entry = ttk.Entry(master, width=30)
+        self.name_entry.grid(row=0, column=1, sticky=tk.EW, padx=5, pady=5)
+        self.name_entry.insert(0, self.initial_name)
+
+        ttk.Label(master, text="フォルダパス:").grid(
+            row=1, column=0, sticky=tk.W, padx=5, pady=5
+        )
+
+        path_frame = ttk.Frame(master)
+        path_frame.grid(row=1, column=1, sticky=tk.EW, padx=5, pady=5)
+        path_frame.columnconfigure(0, weight=1)
+
+        self.path_entry = ttk.Entry(path_frame, textvariable=self.path_var)
+        self.path_entry.grid(row=0, column=0, sticky=tk.EW)
+
+        ttk.Button(path_frame, text="参照", command=self._browse_directory).grid(
+            row=0, column=1, padx=(5, 0)
+        )
+
+        return self.name_entry
+
+    def _browse_directory(self):
+        current_path = self.path_var.get()
+        initial_dir = (
+            current_path if os.path.isdir(current_path) else os.path.expanduser("~")
+        )
+
+        directory = filedialog.askdirectory(
+            initialdir=initial_dir, title="フォルダ選択", parent=self
+        )
+
+        if directory:
+            self.path_var.set(directory)
+
+    def apply(self):
+        name = self.name_entry.get().strip()
+        path = self.path_var.get().strip()
+
+        errors = []
+
+        if not name:
+            errors.append("フォルダ名を入力してください。")
+
+        if not path:
+            errors.append("フォルダパスを入力してください。")
+        elif not os.path.isdir(path):
+            errors.append("有効なフォルダパスを選択してください。")
+
+        if errors:
+            messagebox.showerror("入力エラー", "\n".join(errors), parent=self)
+            return
+
+        self.result = {"name": name, "path": path}
 
 
 class FolderSelector:
@@ -148,11 +220,9 @@ class FolderSelector:
         return folder_frame
 
     def _on_frame_configure(self, event):
-
         self.folders_canvas.configure(scrollregion=self.folders_canvas.bbox("all"))
 
     def _on_canvas_configure(self, event):
-
         width = event.width
         self.folders_canvas.itemconfig(self.folders_canvas_window, width=width)
 
@@ -171,7 +241,6 @@ class FolderSelector:
         ).grid(row=0, column=1, padx=(5, 0))
 
     def _browse_directory(self, var):
-
         current_path = var.get()
         initial_dir = current_path
 
@@ -195,7 +264,6 @@ class FolderSelector:
             var.set(directory)
 
     def _load_custom_folder_history(self):
-
         for widget in self.custom_folders_frame.winfo_children():
             widget.destroy()
 
@@ -212,11 +280,8 @@ class FolderSelector:
 
             if name and path:
                 if os.path.isdir(path):
-
                     self.custom_folders[name] = {"path": path, "checked": checked}
-
                     self._add_folder_to_ui(name, path, checked, i)
-
                     self.log(
                         f"カスタムフォルダを追加: {name} -> {path} (選択状態: {checked})"
                     )
@@ -227,10 +292,9 @@ class FolderSelector:
             self.path_config.save_custom_folder_history(self.custom_folders)
 
     def _add_folder_to_ui(self, name, path, checked, index):
-
         folder_frame = ttk.Frame(self.custom_folders_frame)
         folder_frame.grid(row=index, column=0, sticky=tk.EW, pady=1)
-        folder_frame.columnconfigure(1, weight=1)
+        folder_frame.columnconfigure(0, weight=1)
 
         check_var = tk.BooleanVar(value=checked)
 
@@ -246,10 +310,34 @@ class FolderSelector:
         )
         checkbutton.grid(row=0, column=0, sticky=tk.W)
 
+        def edit_this_folder():
+            self._edit_specific_folder(name)
+
+        edit_button = ttk.Button(
+            folder_frame,
+            text="✏",
+            width=3,
+            command=edit_this_folder,
+        )
+        edit_button.grid(row=0, column=1, padx=(5, 0), sticky=tk.E)
+
+        def delete_this_folder():
+            self._delete_specific_folder(name)
+
+        delete_button = ttk.Button(
+            folder_frame,
+            text="✕",
+            width=3,
+            command=delete_this_folder,
+        )
+        delete_button.grid(row=0, column=2, padx=(2, 0), sticky=tk.E)
+
         self.custom_folder_checkbuttons[name] = {
             "checkbutton": checkbutton,
             "var": check_var,
             "frame": folder_frame,
+            "edit_button": edit_button,
+            "delete_button": delete_button,
         }
 
     def _add_custom_folder(self):
@@ -292,28 +380,138 @@ class FolderSelector:
 
         self.folders_canvas.configure(scrollregion=self.folders_canvas.bbox("all"))
 
-    def _remove_custom_folder(self):
+    def _edit_specific_folder(self, folder_name):
+        if folder_name not in self.custom_folders:
+            messagebox.showerror(
+                "エラー",
+                f"フォルダ '{folder_name}' が見つかりません。",
+                parent=self.root,
+            )
+            return
 
+        current_info = self.custom_folders[folder_name]
+        current_path = current_info["path"]
+        current_checked = current_info["checked"]
+
+        dialog = FolderEditDialog(
+            self.root,
+            title="カスタムフォルダ編集",
+            initial_name=folder_name,
+            initial_path=current_path,
+        )
+
+        if dialog.result is None:
+            return
+
+        new_name = dialog.result["name"]
+        new_path = dialog.result["path"]
+
+        if new_name != folder_name and (
+            new_name in self.folder_vars or new_name in self.custom_folders
+        ):
+            messagebox.showerror(
+                "エラー",
+                f"フォルダ名 '{new_name}' は既に使用されています。",
+                parent=self.root,
+            )
+            return
+
+        if new_name != folder_name:
+
+            del self.custom_folders[folder_name]
+            self.custom_folders[new_name] = {
+                "path": new_path,
+                "checked": current_checked,
+            }
+        else:
+
+            self.custom_folders[folder_name]["path"] = new_path
+
+        self._refresh_folder_ui()
+
+        self.path_config.save_custom_folder_history(self.custom_folders)
+
+        self.log(f"カスタムフォルダを編集: {folder_name} -> {new_name}: {new_path}")
+
+    def _delete_specific_folder(self, folder_name):
+        if folder_name not in self.custom_folders:
+            messagebox.showerror(
+                "エラー",
+                f"フォルダ '{folder_name}' が見つかりません。",
+                parent=self.root,
+            )
+            return
+
+        if not messagebox.askyesno(
+            "確認",
+            f"カスタムフォルダ '{folder_name}' を削除しますか？",
+            parent=self.root,
+        ):
+            return
+
+        if folder_name in self.custom_folder_checkbuttons:
+            self.custom_folder_checkbuttons[folder_name]["frame"].destroy()
+            del self.custom_folder_checkbuttons[folder_name]
+
+        del self.custom_folders[folder_name]
+        self._refresh_folder_ui()
+        self.log(f"カスタムフォルダを削除: {folder_name}")
+        self.path_config.save_custom_folder_history(self.custom_folders)
+
+    def _edit_custom_folder(self):
         if not self.custom_folders:
             messagebox.showinfo(
-                "情報", "削除するフォルダがありません。", parent=self.root
+                "情報", "編集するフォルダがありません。", parent=self.root
             )
             return
 
         folder_names = list(self.custom_folders.keys())
-        if not folder_names:
+        selected_name = self._select_folder_dialog(
+            folder_names, "編集するフォルダを選択"
+        )
+
+        if selected_name is None:
             return
 
+        self._edit_specific_folder(selected_name)
+
+    def _select_folder_dialog(self, folder_names, title):
+        if not folder_names:
+            return None
+
         selection_dialog = tk.Toplevel(self.root)
-        selection_dialog.title("削除するフォルダを選択")
+        selection_dialog.title(title)
         selection_dialog.transient(self.root)
         selection_dialog.grab_set()
 
-        listbox = tk.Listbox(selection_dialog, width=50, height=10)
-        listbox.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+        selection_dialog.geometry("400x300")
+
+        selection_dialog.update_idletasks()
+        x = (selection_dialog.winfo_screenwidth() // 2) - (400 // 2)
+        y = (selection_dialog.winfo_screenheight() // 2) - (300 // 2)
+        selection_dialog.geometry(f"400x300+{x}+{y}")
+
+        listbox_frame = ttk.Frame(selection_dialog)
+        listbox_frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+
+        listbox = tk.Listbox(listbox_frame)
+        listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        scrollbar = ttk.Scrollbar(
+            listbox_frame, orient=tk.VERTICAL, command=listbox.yview
+        )
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        listbox.configure(yscrollcommand=scrollbar.set)
 
         for name in folder_names:
-            listbox.insert(tk.END, name)
+            path = self.custom_folders[name]["path"]
+            display_text = f"{name}: {path}"
+            listbox.insert(tk.END, display_text)
+
+        def on_double_click(event):
+            on_ok()
+
+        listbox.bind("<Double-Button-1>", on_double_click)
 
         button_frame = ttk.Frame(selection_dialog)
         button_frame.pack(pady=10)
@@ -325,6 +523,10 @@ class FolderSelector:
             if selected_indices:
                 selected_name[0] = folder_names[selected_indices[0]]
                 selection_dialog.destroy()
+            else:
+                messagebox.showwarning(
+                    "警告", "フォルダを選択してください。", parent=selection_dialog
+                )
 
         def on_cancel():
             selection_dialog.destroy()
@@ -334,26 +536,32 @@ class FolderSelector:
             side=tk.LEFT
         )
 
+        if folder_names:
+            listbox.selection_set(0)
+            listbox.focus_set()
+
         self.root.wait_window(selection_dialog)
 
-        if selected_name[0] is not None:
-            name = selected_name[0]
-            if name in self.custom_folders:
+        return selected_name[0]
 
-                if name in self.custom_folder_checkbuttons:
-                    self.custom_folder_checkbuttons[name]["frame"].destroy()
-                    del self.custom_folder_checkbuttons[name]
+    def _remove_custom_folder(self):
+        if not self.custom_folders:
+            messagebox.showinfo(
+                "情報", "削除するフォルダがありません。", parent=self.root
+            )
+            return
 
-                del self.custom_folders[name]
+        folder_names = list(self.custom_folders.keys())
+        selected_name = self._select_folder_dialog(
+            folder_names, "削除するフォルダを選択"
+        )
 
-                self._refresh_folder_ui()
+        if selected_name is None:
+            return
 
-                self.log(f"カスタムフォルダを削除: {name}")
-
-                self.path_config.save_custom_folder_history(self.custom_folders)
+        self._delete_specific_folder(selected_name)
 
     def _refresh_folder_ui(self):
-
         for widget in self.custom_folders_frame.winfo_children():
             widget.destroy()
 
@@ -367,7 +575,6 @@ class FolderSelector:
         self.folders_canvas.configure(scrollregion=self.folders_canvas.bbox("all"))
 
     def _select_all_folders(self):
-
         for name, folder_info in self.custom_folders.items():
             folder_info["checked"] = True
             if name in self.custom_folder_checkbuttons:
@@ -377,7 +584,6 @@ class FolderSelector:
         self.log("すべてのカスタムフォルダを選択しました")
 
     def _deselect_all_folders(self):
-
         for name, folder_info in self.custom_folders.items():
             folder_info["checked"] = False
             if name in self.custom_folder_checkbuttons:
@@ -387,9 +593,7 @@ class FolderSelector:
         self.log("すべてのカスタムフォルダの選択を解除しました")
 
     def _update_default_paths(self, *args):
-
         scale = self.comp_scale.get()
-
         scale_config = self.path_config.get_scale_config(scale)
 
         self.folder_vars["lr"].set(scale_config.get("lr_dir", ""))
@@ -413,7 +617,6 @@ class FolderSelector:
         return folder_dict
 
     def save_comparison_paths(self):
-
         scale = self.comp_scale.get()
 
         paths_config = {
@@ -423,7 +626,6 @@ class FolderSelector:
         }
 
         self.path_config.update_scale_config(scale, paths_config)
-
         self.path_config.save_custom_folder_history(self.custom_folders)
 
         self.log(f"スケール {scale} の比較パス設定とカスタムフォルダ履歴を保存しました")
