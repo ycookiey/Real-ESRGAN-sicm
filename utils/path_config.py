@@ -15,18 +15,36 @@ class PathConfig:
             "csv_output_dir": "",
             "python_path": "",
             "working_dir": "",
-            "scale_configs": {
-                "2": {
-                    "csv_input_dir": "",
-                    "csv_output_dir": "x2csvcsv_128_finetuned",
+            "selected_dataset": "64x64",
+            "dataset_configs": {
+                "64x64": {
+                    "scale_configs": {
+                        "2": {
+                            "csv_input_dir": "",
+                            "csv_output_dir": "x2csvcsv_128_finetuned",
+                        },
+                        "4": {
+                            "csv_input_dir": "",
+                            "csv_output_dir": "x4csvcsv_128_finetuned",
+                        },
+                    }
                 },
-                "4": {
-                    "csv_input_dir": "",
-                    "csv_output_dir": "x4csvcsv_128_finetuned",
+                "256x256": {
+                    "scale_configs": {
+                        "2": {
+                            "csv_input_dir": "",
+                            "csv_output_dir": "x2csvcsv_256_finetuned",
+                        },
+                        "4": {
+                            "csv_input_dir": "",
+                            "csv_output_dir": "x4csvcsv_256_finetuned",
+                        },
+                    }
                 },
             },
             "custom_folder_history": [],
         }
+
         self.config = self.load_config()
 
         if not self.config["python_path"] or not self.config["working_dir"]:
@@ -37,11 +55,12 @@ class PathConfig:
             self.save_config(self.config)
 
     def load_config(self) -> Dict[str, Any]:
-
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, "r", encoding="utf-8") as f:
                     config = json.load(f)
+
+                config = self._migrate_config(config)
 
                 result = self.default_config.copy()
                 self._deep_update(result, config)
@@ -52,8 +71,39 @@ class PathConfig:
         else:
             return self.default_config.copy()
 
-    def _deep_update(self, target, source):
+    def _migrate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
 
+        if "dataset_configs" in config:
+            return config
+
+        if "scale_configs" in config:
+            print("設定を新しいデータセット構造に移行しています...")
+
+            old_scale_configs = config.pop("scale_configs")
+
+            config["dataset_configs"] = {
+                "64x64": {"scale_configs": old_scale_configs},
+                "256x256": {
+                    "scale_configs": {
+                        "2": {
+                            "csv_input_dir": "",
+                            "csv_output_dir": "x2csvcsv_256_finetuned",
+                        },
+                        "4": {
+                            "csv_input_dir": "",
+                            "csv_output_dir": "x4csvcsv_256_finetuned",
+                        },
+                    }
+                },
+            }
+
+            config["selected_dataset"] = "64x64"
+
+            print("移行完了: 既存設定を64x64データセットとして保存しました")
+
+        return config
+
+    def _deep_update(self, target, source):
         for key, value in source.items():
             if (
                 key in target
@@ -96,36 +146,76 @@ class PathConfig:
             return False
 
     def get_path(self, key: str) -> str:
-
         return self.config.get(key, self.default_config.get(key, ""))
 
-    def get_scale_config(self, scale: int) -> Dict[str, str]:
+    def get_selected_dataset(self) -> str:
+
+        return self.config.get("selected_dataset", "64x64")
+
+    def set_selected_dataset(self, dataset: str) -> bool:
+
+        if dataset in self.get_available_datasets():
+            self.config["selected_dataset"] = dataset
+            return self.save_config(self.config)
+        return False
+
+    def get_available_datasets(self) -> List[str]:
+
+        dataset_configs = self.config.get("dataset_configs", {})
+        return list(dataset_configs.keys())
+
+    def get_scale_config(self, scale: int, dataset: str = None) -> Dict[str, str]:
+
+        if dataset is None:
+            dataset = self.get_selected_dataset()
 
         scale_str = str(scale)
-        scale_configs = self.config.get("scale_configs", {})
-        if scale_str in scale_configs:
-            return scale_configs[scale_str]
-        return self.default_config.get("scale_configs", {}).get(scale_str, {})
+        dataset_configs = self.config.get("dataset_configs", {})
+
+        if dataset in dataset_configs:
+            scale_configs = dataset_configs[dataset].get("scale_configs", {})
+            if scale_str in scale_configs:
+                return scale_configs[scale_str]
+
+        default_dataset_configs = self.default_config.get("dataset_configs", {})
+        if dataset in default_dataset_configs:
+            default_scale_configs = default_dataset_configs[dataset].get(
+                "scale_configs", {}
+            )
+            return default_scale_configs.get(scale_str, {})
+
+        return {}
 
     def update_config(self, config: Dict[str, Any]) -> bool:
-
         for key, value in config.items():
-            if key != "scale_configs":
+            if key not in ["dataset_configs", "selected_dataset"]:
                 self.config[key] = value
         return self.save_config(self.config)
 
-    def update_scale_config(self, scale: int, config: Dict[str, str]) -> bool:
+    def update_scale_config(
+        self, scale: int, config: Dict[str, str], dataset: str = None
+    ) -> bool:
+
+        if dataset is None:
+            dataset = self.get_selected_dataset()
 
         scale_str = str(scale)
-        if "scale_configs" not in self.config:
-            self.config["scale_configs"] = {}
-        if scale_str not in self.config["scale_configs"]:
-            self.config["scale_configs"][scale_str] = {}
-        self.config["scale_configs"][scale_str].update(config)
+
+        if "dataset_configs" not in self.config:
+            self.config["dataset_configs"] = {}
+        if dataset not in self.config["dataset_configs"]:
+            self.config["dataset_configs"][dataset] = {"scale_configs": {}}
+        if "scale_configs" not in self.config["dataset_configs"][dataset]:
+            self.config["dataset_configs"][dataset]["scale_configs"] = {}
+        if scale_str not in self.config["dataset_configs"][dataset]["scale_configs"]:
+            self.config["dataset_configs"][dataset]["scale_configs"][scale_str] = {}
+
+        self.config["dataset_configs"][dataset]["scale_configs"][scale_str].update(
+            config
+        )
         return self.save_config(self.config)
 
     def suggest_defaults(self) -> Dict[str, Any]:
-
         config = self.default_config.copy()
 
         if not config["python_path"]:
@@ -139,17 +229,20 @@ class PathConfig:
             if os.path.exists(experiments_dir):
                 config["experiments_dir"] = experiments_dir
 
-        for scale in ["2", "4"]:
-            if (
-                scale in config["scale_configs"]
-                and not config["scale_configs"][scale]["csv_input_dir"]
-            ):
-                data_dir = os.path.join(os.getcwd(), "dataset")
-                if os.path.exists(data_dir):
-                    down_sampled_dir = f"0.{'50' if scale == '2' else '25'}down_sampled"
-                    config["scale_configs"][scale]["csv_input_dir"] = os.path.join(
-                        data_dir, down_sampled_dir
-                    )
+        for dataset in ["64x64", "256x256"]:
+            for scale in ["2", "4"]:
+                dataset_config = config["dataset_configs"][dataset]["scale_configs"][
+                    scale
+                ]
+                if not dataset_config.get("csv_input_dir"):
+                    data_dir = os.path.join(os.getcwd(), "dataset")
+                    if os.path.exists(data_dir):
+                        down_sampled_dir = (
+                            f"0.{'50' if scale == '2' else '25'}down_sampled"
+                        )
+                        dataset_config["csv_input_dir"] = os.path.join(
+                            data_dir, down_sampled_dir
+                        )
 
         return config
 
@@ -177,7 +270,6 @@ class PathConfig:
     def save_custom_folder_history(
         self, folders_dict: Dict[str, Dict[str, Any]]
     ) -> bool:
-
         history = []
 
         for name, info in folders_dict.items():

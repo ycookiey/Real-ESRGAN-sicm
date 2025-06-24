@@ -40,6 +40,7 @@ class RealESRGANGUI:
             "experiment_name": tk.StringVar(value="finetune_csv_x4_3.1.2"),
             "pattern_num": tk.IntVar(value=0),
             "model_name": tk.StringVar(value="RealESRGAN_x4plus"),
+            "dataset": tk.StringVar(value=self.path_config.get_selected_dataset()),
             "scale": tk.IntVar(value=2),
             "execution_mode": tk.StringVar(value="range"),
             "target_iteration": tk.IntVar(),
@@ -68,12 +69,13 @@ class RealESRGANGUI:
 
         self.comparison_ui = ImageComparisonUI(comparison_tab, self.root, self.log)
 
+        self.config_manual["dataset"].trace_add("write", self.on_dataset_change)
         self.config_manual["scale"].trace_add("write", self.on_scale_change)
         self.config_manual["execution_mode"].trace_add(
             "write", self.toggle_parameter_state
         )
 
-        self.on_scale_change()
+        self.on_dataset_change()
         self.toggle_parameter_state()
 
         first_item_iid = self.exp_manager.select_first_item()
@@ -92,7 +94,6 @@ class RealESRGANGUI:
         self.create_execution_widgets(execution_container)
 
     def create_settings_widgets(self, parent_container):
-
         settings_outer_frame = ttk.Frame(parent_container)
         settings_outer_frame.pack(fill=tk.X, expand=False)
 
@@ -166,8 +167,21 @@ class RealESRGANGUI:
         self.options_frame.grid_remove()
 
     def _create_main_param_widgets(self, parent):
-
         row_idx = 0
+
+        ttk.Label(parent, text="データセット:").grid(
+            row=row_idx, column=0, sticky=tk.W, pady=2
+        )
+        dataset_combo = ttk.Combobox(
+            parent,
+            textvariable=self.config_manual["dataset"],
+            values=self.path_config.get_available_datasets(),
+            state="readonly",
+        )
+        dataset_combo.grid(row=row_idx, column=1, sticky=tk.EW, pady=2)
+        self.widgets["dataset_combo"] = dataset_combo
+        row_idx += 1
+
         ttk.Label(parent, text="バージョン:").grid(
             row=row_idx, column=0, sticky=tk.W, pady=2
         )
@@ -207,7 +221,6 @@ class RealESRGANGUI:
         row_idx += 1
 
     def _create_exec_mode_widgets(self, parent):
-
         row_idx_exec = 0
         ttk.Label(parent, text="実行モード:").grid(
             row=row_idx_exec, column=0, sticky=tk.W, pady=2
@@ -273,7 +286,6 @@ class RealESRGANGUI:
         row_idx_exec += 1
 
     def _create_options_widgets(self, parent):
-
         parent.columnconfigure(0, weight=1)
         parent.columnconfigure(1, weight=3)
 
@@ -339,7 +351,6 @@ class RealESRGANGUI:
         )
 
     def save_paths(self):
-
         paths = {
             "experiments_dir": self.config_manual["experiments_dir"].get(),
             "python_path": self.config_manual["python_path"].get(),
@@ -347,21 +358,22 @@ class RealESRGANGUI:
         }
         self.path_config.update_config(paths)
 
+        current_dataset = self.config_manual["dataset"].get()
+        self.path_config.set_selected_dataset(current_dataset)
+
         scale = self.config_manual["scale"].get()
         scale_config = {
             "csv_input_dir": self.config_manual["csv_input_dir"].get(),
             "csv_output_dir": self.config_manual["csv_output_dir"].get(),
         }
-        self.path_config.update_scale_config(scale, scale_config)
+        self.path_config.update_scale_config(scale, scale_config, current_dataset)
 
         self.log("パス設定をファイルに保存しました。")
         messagebox.showinfo("保存完了", "パス設定が保存されました。", parent=self.root)
 
     def on_treeview_select(self, event):
-
         selected_data = self.exp_manager.get_selected_data()
         if selected_data:
-
             self.config_display["version"].set(selected_data.get("version", ""))
             self.config_display["total_iter"].set(selected_data.get("total_iter", 0))
             self.config_display["model_save_freq"].set(
@@ -376,39 +388,61 @@ class RealESRGANGUI:
             except ValueError:
                 self.config_manual["target_iteration"].set(0)
 
-            self.on_scale_change()
+            self.on_dataset_change()
         else:
-
             self.config_display["version"].set("")
             self.config_display["total_iter"].set(0)
             self.config_display["model_save_freq"].set(0)
             self.config_manual["target_iteration"].set(0)
+            self.on_dataset_change()
+
+    def on_dataset_change(self, *args):
+        """データセット変更時の処理"""
+        try:
+            current_dataset = self.config_manual["dataset"].get()
+            self.path_config.set_selected_dataset(current_dataset)
+
             self.on_scale_change()
 
+            self.log(f"データセットを '{current_dataset}' に変更しました")
+        except tk.TclError:
+            pass
+
     def on_scale_change(self, *args):
+        """スケール変更時の処理（データセット対応版）"""
         try:
+            current_dataset = self.config_manual["dataset"].get()
             scale = self.config_manual["scale"].get()
 
             current_input_dir = self.config_manual["csv_input_dir"].get()
             current_output_dir = self.config_manual["csv_output_dir"].get()
 
-            scale_config = self.path_config.get_scale_config(scale)
+            scale_config = self.path_config.get_scale_config(scale, current_dataset)
             default_input = scale_config.get("csv_input_dir", "")
             default_output = scale_config.get("csv_output_dir", "")
 
-            other_scales = [s for s in [2, 4] if s != scale]
-            update_input = not current_input_dir or any(
-                current_input_dir
-                == self.path_config.get_scale_config(s).get("csv_input_dir")
-                for s in other_scales
-                if self.path_config.get_scale_config(s).get("csv_input_dir")
-            )
-            update_output = not current_output_dir or any(
-                current_output_dir
-                == self.path_config.get_scale_config(s).get("csv_output_dir")
-                for s in other_scales
-                if self.path_config.get_scale_config(s).get("csv_output_dir")
-            )
+            datasets = self.path_config.get_available_datasets()
+            scales = [2, 4]
+
+            update_input = not current_input_dir
+            update_output = not current_output_dir
+
+            if not update_input or not update_output:
+                for ds in datasets:
+                    for sc in scales:
+                        if ds == current_dataset and sc == scale:
+                            continue
+                        other_config = self.path_config.get_scale_config(sc, ds)
+                        if not update_input and current_input_dir == other_config.get(
+                            "csv_input_dir", ""
+                        ):
+                            update_input = True
+                        if (
+                            not update_output
+                            and current_output_dir
+                            == other_config.get("csv_output_dir", "")
+                        ):
+                            update_output = True
 
             if update_input:
                 self.config_manual["csv_input_dir"].set(default_input)
@@ -419,7 +453,6 @@ class RealESRGANGUI:
             pass
 
     def toggle_options_visibility(self):
-
         if self.options_visible.get():
             self.options_frame.grid_remove()
             self.widgets["options_toggle_button"].config(text="詳細オプションを表示 ▼")
@@ -430,7 +463,6 @@ class RealESRGANGUI:
             self.options_visible.set(True)
 
     def create_path_setting(self, parent, label_text, config_key, row, is_dir=True):
-
         ttk.Label(parent, text=label_text).grid(row=row, column=0, sticky=tk.W, pady=2)
         path_frame = ttk.Frame(parent)
         path_frame.grid(row=row, column=1, sticky=tk.EW, pady=2)
@@ -455,7 +487,6 @@ class RealESRGANGUI:
         self.widgets[f"{config_key}_button"] = button
 
     def toggle_parameter_state(self, *args):
-
         mode = self.config_manual["execution_mode"].get()
         is_single_mode = mode == "single"
 
@@ -468,7 +499,6 @@ class RealESRGANGUI:
                 widget.config(state=tk.NORMAL if is_single_mode else tk.DISABLED)
 
     def create_execution_widgets(self, parent_container):
-
         controls_frame = ttk.Frame(parent_container)
         controls_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 5))
 
@@ -500,21 +530,17 @@ class RealESRGANGUI:
         self.widgets["output_text"] = self.output_text
 
     def log(self, message):
-
         output_widget = self.widgets.get("output_text")
         if output_widget and output_widget.winfo_exists():
             output_widget.config(state=tk.NORMAL)
             output_widget.insert(tk.END, str(message) + "\n")
             output_widget.see(tk.END)
             output_widget.config(state=tk.DISABLED)
-
             self.root.update_idletasks()
         else:
-
             print(message)
 
     def browse_directory(self, config_key):
-
         var = self.config_manual.get(config_key)
         if var is None:
             return
@@ -535,7 +561,6 @@ class RealESRGANGUI:
             var.set(directory)
 
     def browse_file(self, config_key):
-
         var = self.config_manual.get(config_key)
         if var is None:
             return
@@ -552,9 +577,7 @@ class RealESRGANGUI:
             var.set(file_path)
 
     def run_inference(self):
-
         try:
-
             selected_exp_data = self.exp_manager.get_selected_data()
             if not selected_exp_data:
                 messagebox.showerror(
@@ -603,7 +626,6 @@ class RealESRGANGUI:
             self._finalize_run(all_success, p_manual["execution_mode"], final_progress)
 
         except Exception as e:
-
             self.log(f"致命的なエラーが発生しました: {str(e)}")
             self.log(traceback.format_exc())
             messagebox.showerror(
@@ -615,7 +637,6 @@ class RealESRGANGUI:
                 self.progress_label.config(text="致命的エラー")
 
     def _validate_parameters(self, p_manual, selected_exp_data):
-
         errors = []
 
         if not (
@@ -624,6 +645,8 @@ class RealESRGANGUI:
             errors.append("パターン番号は0以上の整数")
         if not isinstance(p_manual["scale"], int) or p_manual["scale"] not in [2, 4]:
             errors.append("スケールは2または4")
+        if not p_manual["dataset"]:
+            errors.append("データセットが未選択")
         for k in [
             "experiment_name",
             "model_name",
@@ -651,7 +674,6 @@ class RealESRGANGUI:
         return errors
 
     def _prepare_epochs_to_run(self, p_manual, selected_exp_data):
-
         epochs_to_run = []
         log_params = {}
         warnings = []
@@ -708,7 +730,6 @@ class RealESRGANGUI:
         return epochs_to_run, log_params, warnings
 
     def _prepare_for_run(self):
-
         if self.widgets.get("output_text"):
             self.widgets["output_text"].config(state=tk.NORMAL)
             self.widgets["output_text"].delete(1.0, tk.END)
@@ -718,13 +739,12 @@ class RealESRGANGUI:
         self.root.update_idletasks()
 
     def _log_initial_settings(self, version, p_manual, log_params):
-
         self.log("=== 推論実行設定 ===")
         self.log(
             f"モード: {'範囲' if p_manual['execution_mode'] == 'range' else '単一'}"
         )
+        self.log(f"データセット: {p_manual['dataset']}")
         self.log(f"バージョン: {version}")
-
         self.log(
             f" (総Iter: {self.config_display['total_iter'].get()}, 保存頻度: {self.config_display['model_save_freq'].get()})"
         )
@@ -740,7 +760,6 @@ class RealESRGANGUI:
         self.log("\n処理開始...")
 
     def _execute_inference_loop(self, epochs_to_run, version, p_manual):
-
         total_epochs = len(epochs_to_run)
         processed_count = 0
         all_success = True
@@ -798,7 +817,6 @@ class RealESRGANGUI:
         return all_success, current_progress
 
     def _finalize_run(self, all_success, execution_mode, final_progress):
-
         if all_success:
             self.log("\n全処理 正常完了。")
             messagebox.showinfo(
@@ -810,10 +828,8 @@ class RealESRGANGUI:
         else:
             self.log("\n処理中にエラーが発生しました。")
             if execution_mode == "range":
-
                 self.progress_label.config(text=f"{int(final_progress)}% (エラー)")
             else:
-
                 self.progress_label.config(text="エラー")
 
 
@@ -823,7 +839,6 @@ def main():
 
     def on_closing():
         try:
-
             if hasattr(app, "exp_manager") and app.exp_manager:
                 app.exp_manager.save_data()
                 print("実験データを保存しました")
@@ -834,7 +849,6 @@ def main():
                 and hasattr(app.comparison_ui, "folder_selector")
                 and app.comparison_ui.folder_selector
             ):
-
                 folder_selector = app.comparison_ui.folder_selector
                 custom_folders = folder_selector.custom_folders
 
