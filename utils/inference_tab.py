@@ -161,10 +161,19 @@ class InferenceTab:
         if first_item_iid:
             self.on_treeview_select(None)
 
+    def _generate_experiment_name(self, version):
+        if not version:
+            return "finetune_csv_x4_"
+
+        experiment_name = f"finetune_csv_x4_{version}"
+
+        return experiment_name
+
     def on_treeview_select(self, event):
         selected_data = self.exp_manager.get_selected_data()
         if selected_data:
-            self.config_display["version"].set(selected_data.get("version", ""))
+            version = selected_data.get("version", "")
+            self.config_display["version"].set(version)
             self.config_display["total_iter"].set(selected_data.get("total_iter", 0))
             self.config_display["model_save_freq"].set(
                 selected_data.get("model_save_freq", 0)
@@ -178,12 +187,20 @@ class InferenceTab:
             except ValueError:
                 self.config_manual["target_iteration"].set(0)
 
+            auto_experiment_name = self._generate_experiment_name(version)
+            self.config_manual["experiment_name"].set(auto_experiment_name)
+
+            self.log(
+                f"バージョン '{version}' を選択: 実験名を '{auto_experiment_name}' に自動設定"
+            )
+
             self.on_dataset_change()
         else:
             self.config_display["version"].set("")
             self.config_display["total_iter"].set(0)
             self.config_display["model_save_freq"].set(0)
             self.config_manual["target_iteration"].set(0)
+            self.config_manual["experiment_name"].set("finetune_csv_x4_")
             self.on_dataset_change()
 
     def on_dataset_change(self, *args):
@@ -234,6 +251,18 @@ class InferenceTab:
                 self.config_manual["csv_input_dir"].set(default_input)
             if update_output:
                 self.config_manual["csv_output_dir"].set(default_output)
+
+            current_version = self.config_display["version"].get()
+            if current_version:
+                auto_experiment_name = self._generate_experiment_name(current_version)
+                current_experiment_name = self.config_manual["experiment_name"].get()
+
+                expected_auto_name = f"finetune_csv_x4_{current_version}"
+                if (
+                    not current_experiment_name
+                    or current_experiment_name == expected_auto_name
+                ):
+                    self.config_manual["experiment_name"].set(auto_experiment_name)
 
         except tk.TclError:
             pass
