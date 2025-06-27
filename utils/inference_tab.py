@@ -26,9 +26,10 @@ class InferenceTab:
             "pattern_num": tk.IntVar(value=0),
             "model_name": tk.StringVar(value="RealESRGAN_x4plus"),
             "dataset": tk.StringVar(value=self.path_config.get_selected_dataset()),
-            "scale": tk.IntVar(value=2),
+            "scale": tk.IntVar(value=4),
             "execution_mode": tk.StringVar(value="range"),
             "target_iteration": tk.IntVar(),
+            "pretrained_model_path": tk.StringVar(),
             "experiments_dir": tk.StringVar(
                 value=self.path_config.get_path("experiments_dir")
             ),
@@ -46,7 +47,6 @@ class InferenceTab:
         self._initialize_display()
 
     def _create_widgets(self):
-
         settings_container = ttk.Frame(self.parent_frame, padding=5)
         settings_container.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(5, 0))
 
@@ -56,7 +56,6 @@ class InferenceTab:
         )
 
         self._create_settings_area(settings_container)
-
         self._create_execution_area(execution_container)
 
     def _create_settings_area(self, parent):
@@ -64,7 +63,6 @@ class InferenceTab:
         settings_outer_frame.pack(fill=tk.X, expand=False)
 
         self._create_experiment_list(settings_outer_frame)
-
         self._create_parameter_section(settings_outer_frame)
 
     def _create_experiment_list(self, parent):
@@ -122,7 +120,6 @@ class InferenceTab:
         self.parameter_widgets.set_save_paths_callback(self.save_paths)
 
     def _create_execution_area(self, parent):
-
         self.inference_controls = InferenceControls(
             parent,
             self.root,
@@ -144,7 +141,6 @@ class InferenceTab:
         self.widgets["output_text"] = self.output_text
 
     def _setup_bindings(self):
-
         self.widgets["exp_tree"].bind("<<TreeviewSelect>>", self.on_treeview_select)
 
         self.config_manual["dataset"].trace_add("write", self.on_dataset_change)
@@ -153,20 +149,84 @@ class InferenceTab:
             "write", self.parameter_widgets.toggle_parameter_state
         )
 
+        self.config_manual["execution_mode"].trace_add(
+            "write", self.on_execution_mode_change
+        )
+        self.config_manual["scale"].trace_add(
+            "write", self.on_scale_change_for_pretrained
+        )
+
     def _initialize_display(self):
+        self._set_default_pretrained_model()
         self.on_dataset_change()
         self.parameter_widgets.toggle_parameter_state()
+
+        self.on_execution_mode_change()
 
         first_item_iid = self.exp_manager.select_first_item()
         if first_item_iid:
             self.on_treeview_select(None)
+
+    def _set_default_pretrained_model(self):
+
+        experiments_dir = self.config_manual["experiments_dir"].get()
+        if experiments_dir:
+            scale = self.config_manual["scale"].get()
+            default_model = f"RealESRGAN_x{scale}plus.pth"
+            default_path = os.path.join(
+                experiments_dir, "pretrained_models", default_model
+            )
+
+            if os.path.isfile(default_path):
+                self.config_manual["pretrained_model_path"].set(default_path)
+            else:
+
+                self.config_manual["pretrained_model_path"].set(default_path)
+
+            mode = self.config_manual["execution_mode"].get()
+            if mode == "pretrained":
+                self.config_manual["csv_output_dir"].set("no_finetune")
+
+    def on_execution_mode_change(self, *args):
+
+        mode = self.config_manual["execution_mode"].get()
+
+        if mode == "pretrained":
+
+            self._set_default_pretrained_model()
+
+            scale = self.config_manual["scale"].get()
+            self.config_manual["model_name"].set(f"RealESRGAN_x{scale}plus")
+
+            self.config_manual["csv_output_dir"].set("no_finetune")
+
+        self.parameter_widgets.toggle_parameter_state()
+
+    def on_scale_change_for_pretrained(self, *args):
+
+        mode = self.config_manual["execution_mode"].get()
+
+        if mode == "pretrained":
+
+            scale = self.config_manual["scale"].get()
+
+            self.config_manual["model_name"].set(f"RealESRGAN_x{scale}plus")
+
+            experiments_dir = self.config_manual["experiments_dir"].get()
+            if experiments_dir:
+                default_model = f"RealESRGAN_x{scale}plus.pth"
+                default_path = os.path.join(
+                    experiments_dir, "pretrained_models", default_model
+                )
+                self.config_manual["pretrained_model_path"].set(default_path)
+
+            self.config_manual["csv_output_dir"].set("no_finetune")
 
     def _generate_experiment_name(self, version):
         if not version:
             return "finetune_csv_x4_"
 
         experiment_name = f"finetune_csv_x4_{version}"
-
         return experiment_name
 
     def on_treeview_select(self, event):
@@ -216,53 +276,66 @@ class InferenceTab:
         try:
             current_dataset = self.config_manual["dataset"].get()
             scale = self.config_manual["scale"].get()
+            mode = self.config_manual["execution_mode"].get()
 
-            current_input_dir = self.config_manual["csv_input_dir"].get()
-            current_output_dir = self.config_manual["csv_output_dir"].get()
+            if mode != "pretrained":
+                current_input_dir = self.config_manual["csv_input_dir"].get()
+                current_output_dir = self.config_manual["csv_output_dir"].get()
 
-            scale_config = self.path_config.get_scale_config(scale, current_dataset)
-            default_input = scale_config.get("csv_input_dir", "")
-            default_output = scale_config.get("csv_output_dir", "")
+                scale_config = self.path_config.get_scale_config(scale, current_dataset)
+                default_input = scale_config.get("csv_input_dir", "")
+                default_output = scale_config.get("csv_output_dir", "")
 
-            datasets = self.path_config.get_available_datasets()
-            scales = [2, 4]
+                datasets = self.path_config.get_available_datasets()
+                scales = [2, 4]
 
-            update_input = not current_input_dir
-            update_output = not current_output_dir
+                update_input = not current_input_dir
+                update_output = not current_output_dir
 
-            if not update_input or not update_output:
-                for ds in datasets:
-                    for sc in scales:
-                        if ds == current_dataset and sc == scale:
-                            continue
-                        other_config = self.path_config.get_scale_config(sc, ds)
-                        if not update_input and current_input_dir == other_config.get(
-                            "csv_input_dir", ""
-                        ):
-                            update_input = True
+                if not update_input or not update_output:
+                    for ds in datasets:
+                        for sc in scales:
+                            if ds == current_dataset and sc == scale:
+                                continue
+                            other_config = self.path_config.get_scale_config(sc, ds)
+                            if (
+                                not update_input
+                                and current_input_dir
+                                == other_config.get("csv_input_dir", "")
+                            ):
+                                update_input = True
+                            if (
+                                not update_output
+                                and current_output_dir
+                                == other_config.get("csv_output_dir", "")
+                            ):
+                                update_output = True
+
+                if update_input:
+                    self.config_manual["csv_input_dir"].set(default_input)
+                if update_output:
+                    self.config_manual["csv_output_dir"].set(default_output)
+
+                if mode in ["range", "single"]:
+                    current_version = self.config_display["version"].get()
+                    if current_version:
+                        auto_experiment_name = self._generate_experiment_name(
+                            current_version
+                        )
+                        current_experiment_name = self.config_manual[
+                            "experiment_name"
+                        ].get()
+
+                        expected_auto_name = f"finetune_csv_x4_{current_version}"
                         if (
-                            not update_output
-                            and current_output_dir
-                            == other_config.get("csv_output_dir", "")
+                            not current_experiment_name
+                            or current_experiment_name == expected_auto_name
                         ):
-                            update_output = True
+                            self.config_manual["experiment_name"].set(
+                                auto_experiment_name
+                            )
 
-            if update_input:
-                self.config_manual["csv_input_dir"].set(default_input)
-            if update_output:
-                self.config_manual["csv_output_dir"].set(default_output)
-
-            current_version = self.config_display["version"].get()
-            if current_version:
-                auto_experiment_name = self._generate_experiment_name(current_version)
-                current_experiment_name = self.config_manual["experiment_name"].get()
-
-                expected_auto_name = f"finetune_csv_x4_{current_version}"
-                if (
-                    not current_experiment_name
-                    or current_experiment_name == expected_auto_name
-                ):
-                    self.config_manual["experiment_name"].set(auto_experiment_name)
+            self.on_scale_change_for_pretrained()
 
         except tk.TclError:
             pass
@@ -284,6 +357,10 @@ class InferenceTab:
             "csv_output_dir": self.config_manual["csv_output_dir"].get(),
         }
         self.path_config.update_scale_config(scale, scale_config, current_dataset)
+
+        if self.config_manual["pretrained_model_path"].get():
+
+            pass
 
         self.log("パス設定をファイルに保存しました。")
         messagebox.showinfo("保存完了", "パス設定が保存されました。", parent=self.root)

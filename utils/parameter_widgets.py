@@ -60,9 +60,12 @@ class ParameterWidgets:
         ttk.Label(main_settings_frame, text="実験名:").grid(
             row=row_idx, column=0, sticky=tk.W, pady=2
         )
-        ttk.Entry(
+        self.widgets["experiment_name_entry"] = ttk.Entry(
             main_settings_frame, textvariable=self.config_manual["experiment_name"]
-        ).grid(row=row_idx, column=1, sticky=tk.EW, pady=2)
+        )
+        self.widgets["experiment_name_entry"].grid(
+            row=row_idx, column=1, sticky=tk.EW, pady=2
+        )
         row_idx += 1
 
         ttk.Label(main_settings_frame, text="パターン番号:").grid(
@@ -116,6 +119,14 @@ class ParameterWidgets:
             value="single",
         )
         self.widgets["mode_single_rb"].pack(side=tk.LEFT, padx=5)
+
+        self.widgets["mode_pretrained_rb"] = ttk.Radiobutton(
+            mode_frame,
+            text="事前訓練済み",
+            variable=self.config_manual["execution_mode"],
+            value="pretrained",
+        )
+        self.widgets["mode_pretrained_rb"].pack(side=tk.LEFT, padx=5)
         row_idx += 1
 
         self.widgets["model_save_freq_label"] = ttk.Label(
@@ -165,9 +176,76 @@ class ParameterWidgets:
         self.widgets["target_iter_entry"].grid(
             row=row_idx, column=1, sticky=tk.EW, pady=2
         )
+        row_idx += 1
+
+        self.widgets["pretrained_model_label"] = ttk.Label(
+            exec_mode_frame, text="事前訓練済みモデル:"
+        )
+        self.widgets["pretrained_model_label"].grid(
+            row=row_idx, column=0, sticky=tk.W, pady=2
+        )
+
+        pretrained_frame = ttk.Frame(exec_mode_frame)
+        pretrained_frame.grid(row=row_idx, column=1, sticky=tk.EW, pady=2)
+        pretrained_frame.columnconfigure(0, weight=1)
+
+        self.widgets["pretrained_model_entry"] = ttk.Entry(
+            pretrained_frame, textvariable=self.config_manual["pretrained_model_path"]
+        )
+        self.widgets["pretrained_model_entry"].grid(row=0, column=0, sticky=tk.EW)
+
+        self.widgets["pretrained_model_button"] = ttk.Button(
+            pretrained_frame, text="参照", command=self._browse_pretrained_model
+        )
+        self.widgets["pretrained_model_button"].grid(row=0, column=1, padx=(5, 0))
+        row_idx += 1
+
+        self.widgets["pretrained_help_label"] = ttk.Label(
+            exec_mode_frame,
+            text="推奨: experiments/pretrained_models/RealESRGAN_x[scale]plus.pth",
+            font=("Helvetica", 8),
+            foreground="gray",
+        )
+        self.widgets["pretrained_help_label"].grid(
+            row=row_idx, column=1, sticky=tk.W, pady=(0, 5)
+        )
+
+    def _browse_pretrained_model(self):
+        current_path = self.config_manual["pretrained_model_path"].get()
+
+        if current_path and os.path.isfile(current_path):
+            initial_dir = os.path.dirname(current_path)
+        else:
+
+            experiments_dir = self.config_manual.get(
+                "experiments_dir", tk.StringVar()
+            ).get()
+            if experiments_dir:
+                pretrained_dir = os.path.join(experiments_dir, "pretrained_models")
+                if os.path.isdir(pretrained_dir):
+                    initial_dir = pretrained_dir
+                else:
+                    initial_dir = experiments_dir
+            else:
+                initial_dir = os.path.expanduser("~")
+
+        file_path = filedialog.askopenfilename(
+            initialdir=initial_dir,
+            title="事前訓練済みモデル選択",
+            filetypes=[("PyTorch Models", "*.pth"), ("All Files", "*.*")],
+            parent=self.root,
+        )
+
+        if file_path:
+            self.config_manual["pretrained_model_path"].set(file_path)
+
+            basename = os.path.basename(file_path).lower()
+            if "x2" in basename:
+                self.config_manual["scale"].set(2)
+            elif "x4" in basename:
+                self.config_manual["scale"].set(4)
 
     def _create_options_section(self):
-
         self.widgets["options_toggle_button"] = ttk.Button(
             self.parent_frame,
             text="詳細オプションを表示 ▼",
@@ -310,6 +388,27 @@ class ParameterWidgets:
     def toggle_parameter_state(self, *args):
         mode = self.config_manual["execution_mode"].get()
         is_single_mode = mode == "single"
+        is_pretrained_mode = mode == "pretrained"
+        is_experiment_mode = mode in ["range", "single"]
+
+        experiment_widgets = [
+            ("model_save_freq_label", "model_save_freq_entry"),
+            ("total_iter_label", "total_iter_entry"),
+        ]
+
+        for label_key, entry_key in experiment_widgets:
+            for widget_key in [label_key, entry_key]:
+                widget = self.widgets.get(widget_key)
+                if widget and widget.winfo_exists():
+                    if is_experiment_mode:
+                        widget.grid()
+                        widget.config(
+                            state=(
+                                tk.NORMAL if entry_key.endswith("_entry") else "normal"
+                            )
+                        )
+                    else:
+                        widget.grid_remove()
 
         target_iter_widgets = [
             self.widgets.get("target_iter_label"),
@@ -317,10 +416,35 @@ class ParameterWidgets:
         ]
         for widget in target_iter_widgets:
             if widget and widget.winfo_exists():
-                widget.config(state=tk.NORMAL if is_single_mode else tk.DISABLED)
+                if is_single_mode:
+                    widget.grid()
+                    widget.config(state=tk.NORMAL)
+                else:
+                    widget.grid_remove()
+
+        pretrained_widgets = [
+            self.widgets.get("pretrained_model_label"),
+            self.widgets.get("pretrained_model_entry"),
+            self.widgets.get("pretrained_model_button"),
+            self.widgets.get("pretrained_help_label"),
+        ]
+        for widget in pretrained_widgets:
+            if widget and widget.winfo_exists():
+                if is_pretrained_mode:
+                    widget.grid()
+                    if hasattr(widget, "config"):
+                        widget.config(state=tk.NORMAL)
+                else:
+                    widget.grid_remove()
+
+        experiment_name_entry = self.widgets.get("experiment_name_entry")
+        if experiment_name_entry and experiment_name_entry.winfo_exists():
+            if is_pretrained_mode:
+                experiment_name_entry.config(state=tk.DISABLED)
+            else:
+                experiment_name_entry.config(state=tk.NORMAL)
 
     def _save_paths_callback(self):
-
         if hasattr(self, "save_paths_func"):
             self.save_paths_func()
 
