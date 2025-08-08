@@ -43,6 +43,25 @@ class PathConfig:
                 },
             },
             "custom_folder_history": [],
+            "image_comparison": {
+                "include_type_settings": {
+                    "lr": True,
+                    "bicubic": True,
+                    "hr": True,
+                },
+                "scale_configs": {
+                    "2": {
+                        "lr_dir": "",
+                        "bicubic_dir": "",
+                        "hr_dir": "",
+                    },
+                    "4": {
+                        "lr_dir": "",
+                        "bicubic_dir": "",
+                        "hr_dir": "",
+                    },
+                },
+            },
         }
 
         self.config = self.load_config()
@@ -74,6 +93,11 @@ class PathConfig:
     def _migrate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
 
         if "dataset_configs" in config:
+
+            if "image_comparison" not in config:
+                config["image_comparison"] = self.default_config[
+                    "image_comparison"
+                ].copy()
             return config
 
         if "scale_configs" in config:
@@ -98,6 +122,8 @@ class PathConfig:
             }
 
             config["selected_dataset"] = "64x64"
+
+            config["image_comparison"] = self.default_config["image_comparison"].copy()
 
             print("移行完了: 既存設定を64x64データセットとして保存しました")
 
@@ -149,23 +175,19 @@ class PathConfig:
         return self.config.get(key, self.default_config.get(key, ""))
 
     def get_selected_dataset(self) -> str:
-
         return self.config.get("selected_dataset", "64x64")
 
     def set_selected_dataset(self, dataset: str) -> bool:
-
         if dataset in self.get_available_datasets():
             self.config["selected_dataset"] = dataset
             return self.save_config(self.config)
         return False
 
     def get_available_datasets(self) -> List[str]:
-
         dataset_configs = self.config.get("dataset_configs", {})
         return list(dataset_configs.keys())
 
     def get_scale_config(self, scale: int, dataset: str = None) -> Dict[str, str]:
-
         if dataset is None:
             dataset = self.get_selected_dataset()
 
@@ -188,14 +210,13 @@ class PathConfig:
 
     def update_config(self, config: Dict[str, Any]) -> bool:
         for key, value in config.items():
-            if key not in ["dataset_configs", "selected_dataset"]:
+            if key not in ["dataset_configs", "selected_dataset", "image_comparison"]:
                 self.config[key] = value
         return self.save_config(self.config)
 
     def update_scale_config(
         self, scale: int, config: Dict[str, str], dataset: str = None
     ) -> bool:
-
         if dataset is None:
             dataset = self.get_selected_dataset()
 
@@ -213,6 +234,57 @@ class PathConfig:
         self.config["dataset_configs"][dataset]["scale_configs"][scale_str].update(
             config
         )
+        return self.save_config(self.config)
+
+    def get_image_comparison_include_settings(self) -> Dict[str, bool]:
+        image_comparison = self.config.get("image_comparison", {})
+        include_settings = image_comparison.get("include_type_settings", {})
+
+        default_settings = self.default_config["image_comparison"][
+            "include_type_settings"
+        ]
+        result = default_settings.copy()
+        result.update(include_settings)
+
+        return result
+
+    def update_image_comparison_include_settings(self, settings: Dict[str, bool]) -> bool:
+        if "image_comparison" not in self.config:
+            self.config["image_comparison"] = self.default_config[
+                "image_comparison"
+            ].copy()
+
+        self.config["image_comparison"]["include_type_settings"].update(settings)
+        return self.save_config(self.config)
+
+    def get_image_comparison_scale_config(self, scale: int) -> Dict[str, str]:
+        scale_str = str(scale)
+        image_comparison = self.config.get("image_comparison", {})
+        scale_configs = image_comparison.get("scale_configs", {})
+
+        if scale_str in scale_configs:
+            return scale_configs[scale_str].copy()
+
+        default_configs = self.default_config["image_comparison"]["scale_configs"]
+        return default_configs.get(scale_str, {}).copy()
+
+    def update_image_comparison_scale_config(
+        self, scale: int, config: Dict[str, str]
+    ) -> bool:
+        scale_str = str(scale)
+
+        if "image_comparison" not in self.config:
+            self.config["image_comparison"] = self.default_config[
+                "image_comparison"
+            ].copy()
+
+        if "scale_configs" not in self.config["image_comparison"]:
+            self.config["image_comparison"]["scale_configs"] = {}
+
+        if scale_str not in self.config["image_comparison"]["scale_configs"]:
+            self.config["image_comparison"]["scale_configs"][scale_str] = {}
+
+        self.config["image_comparison"]["scale_configs"][scale_str].update(config)
         return self.save_config(self.config)
 
     def suggest_defaults(self) -> Dict[str, Any]:
@@ -244,7 +316,30 @@ class PathConfig:
                             data_dir, down_sampled_dir
                         )
 
+        self._suggest_image_comparison_defaults(config)
+
         return config
+
+    def _suggest_image_comparison_defaults(self, config: Dict[str, Any]) -> None:
+        working_dir = config.get("working_dir", os.getcwd())
+
+        common_dirs = {
+            "lr": ["lr", "low_resolution", "LR"],
+            "bicubic": ["bicubic", "Bicubic", "BICUBIC"],
+            "hr": ["hr", "high_resolution", "HR", "gt", "ground_truth"],
+        }
+
+        for scale_str in ["2", "4"]:
+            scale_config = config["image_comparison"]["scale_configs"][scale_str]
+
+            for folder_type, possible_names in common_dirs.items():
+                if not scale_config.get(f"{folder_type}_dir"):
+
+                    for name in possible_names:
+                        potential_path = os.path.join(working_dir, name)
+                        if os.path.isdir(potential_path):
+                            scale_config[f"{folder_type}_dir"] = potential_path
+                            break
 
     def get_custom_folder_history(self) -> List[Dict[str, Any]]:
         return self.config.get("custom_folder_history", [])

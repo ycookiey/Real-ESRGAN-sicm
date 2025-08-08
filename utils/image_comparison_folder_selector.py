@@ -87,10 +87,16 @@ class FolderSelector:
         self.custom_folders = {}
         self.custom_folder_checkbuttons = {}
 
+        self.include_type_vars = {
+            "lr": tk.BooleanVar(value=True),
+            "bicubic": tk.BooleanVar(value=True),
+            "hr": tk.BooleanVar(value=True),
+        }
+
         self.frame = self._create_folder_frame()
 
         self._load_custom_folder_history()
-
+        self._load_include_type_settings()
         self._update_default_paths()
 
     def _create_folder_frame(self):
@@ -129,18 +135,44 @@ class FolderSelector:
             "hr": "高解像度 (HR):",
         }
 
+        folder_paths_frame = ttk.LabelFrame(
+            folder_frame, text="フォルダパス", padding=5
+        )
+        folder_paths_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 5))
+        folder_paths_frame.columnconfigure(2, weight=1)
+
         for i, (key, label) in enumerate(folder_labels.items()):
-            ttk.Label(folder_frame, text=label).grid(
-                row=i + 1, column=0, sticky=tk.W, pady=2
+            # チェックボックス
+            cb = ttk.Checkbutton(
+                folder_paths_frame,
+                variable=self.include_type_vars[key],
+                command=lambda k=key: self._on_include_type_change(k),
             )
-            self._create_path_entry(folder_frame, key, i + 1)
+            cb.grid(row=i, column=0, sticky=tk.W, padx=(0, 5), pady=2)
+            
+            # ラベル
+            ttk.Label(folder_paths_frame, text=label).grid(
+                row=i, column=1, sticky=tk.W, pady=2
+            )
+            
+            # パス入力欄
+            self._create_path_entry(folder_paths_frame, key, i, column=2)
+
+        save_button_frame = ttk.Frame(folder_frame)
+        save_button_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(5, 10))
+
+        ttk.Button(
+            save_button_frame,
+            text="基本フォルダ設定を保存",
+            command=self._save_basic_folder_settings,
+        ).pack(side=tk.RIGHT)
 
         ttk.Separator(folder_frame, orient=tk.HORIZONTAL).grid(
-            row=len(folder_labels) + 1, column=0, columnspan=2, sticky="ew", pady=5
+            row=3, column=0, columnspan=2, sticky="ew", pady=5
         )
 
         ttk.Label(folder_frame, text="カスタムフォルダ:").grid(
-            row=len(folder_labels) + 2, column=0, sticky=tk.W, pady=2
+            row=4, column=0, sticky=tk.W, pady=2
         )
 
         self.custom_folder_name = tk.StringVar()
@@ -148,14 +180,10 @@ class FolderSelector:
         custom_name_entry = ttk.Entry(
             folder_frame, textvariable=self.custom_folder_name
         )
-        custom_name_entry.grid(
-            row=len(folder_labels) + 2, column=1, sticky=tk.EW, pady=2
-        )
+        custom_name_entry.grid(row=4, column=1, sticky=tk.EW, pady=2)
 
         custom_folder_frame = ttk.Frame(folder_frame)
-        custom_folder_frame.grid(
-            row=len(folder_labels) + 3, column=0, columnspan=2, sticky=tk.EW, pady=2
-        )
+        custom_folder_frame.grid(row=5, column=0, columnspan=2, sticky=tk.EW, pady=2)
         custom_folder_frame.columnconfigure(0, weight=1)
 
         custom_folder_entry = ttk.Entry(
@@ -175,7 +203,7 @@ class FolderSelector:
 
         custom_folders_container = ttk.Frame(folder_frame)
         custom_folders_container.grid(
-            row=len(folder_labels) + 4, column=0, columnspan=2, sticky=tk.EW, pady=5
+            row=6, column=0, columnspan=2, sticky=tk.EW, pady=5
         )
         custom_folders_container.columnconfigure(0, weight=1)
 
@@ -201,9 +229,7 @@ class FolderSelector:
         self.folders_canvas.bind("<Configure>", self._on_canvas_configure)
 
         custom_buttons_frame = ttk.Frame(folder_frame)
-        custom_buttons_frame.grid(
-            row=len(folder_labels) + 5, column=0, columnspan=2, sticky=tk.EW
-        )
+        custom_buttons_frame.grid(row=7, column=0, columnspan=2, sticky=tk.EW)
 
         ttk.Button(
             custom_buttons_frame, text="削除", command=self._remove_custom_folder
@@ -226,9 +252,9 @@ class FolderSelector:
         width = event.width
         self.folders_canvas.itemconfig(self.folders_canvas_window, width=width)
 
-    def _create_path_entry(self, parent, key, row):
+    def _create_path_entry(self, parent, key, row, column=1):
         path_frame = ttk.Frame(parent)
-        path_frame.grid(row=row, column=1, sticky=tk.EW, pady=2)
+        path_frame.grid(row=row, column=column, sticky=tk.EW, pady=2)
         path_frame.columnconfigure(0, weight=1)
 
         ttk.Entry(path_frame, textvariable=self.folder_vars[key]).grid(
@@ -262,6 +288,40 @@ class FolderSelector:
 
         if directory:
             var.set(directory)
+
+    def _load_include_type_settings(self):
+        include_settings = self.path_config.get_image_comparison_include_settings()
+
+        for key, var in self.include_type_vars.items():
+            var.set(include_settings.get(key, True))
+
+        self.log(f"画像種類表示設定を読み込み: {include_settings}")
+
+    def _save_include_type_settings(self):
+        settings = {key: var.get() for key, var in self.include_type_vars.items()}
+        self.path_config.update_image_comparison_include_settings(settings)
+        self.log(f"画像種類表示設定を保存: {settings}")
+
+    def _on_include_type_change(self, folder_type):
+        self._save_include_type_settings()
+
+
+    def _save_basic_folder_settings(self):
+        scale = self.comp_scale.get()
+
+        config = {
+            "lr_dir": self.folder_vars["lr"].get(),
+            "bicubic_dir": self.folder_vars["bicubic"].get(),
+            "hr_dir": self.folder_vars["hr"].get(),
+        }
+
+        self.path_config.update_image_comparison_scale_config(scale, config)
+        self._save_include_type_settings()
+
+        self.log(f"スケール {scale} の基本フォルダ設定を保存しました")
+        messagebox.showinfo(
+            "保存完了", "基本フォルダ設定が保存されました。", parent=self.root
+        )
 
     def _load_custom_folder_history(self):
         for widget in self.custom_folders_frame.winfo_children():
@@ -417,14 +477,12 @@ class FolderSelector:
             return
 
         if new_name != folder_name:
-
             del self.custom_folders[folder_name]
             self.custom_folders[new_name] = {
                 "path": new_path,
                 "checked": current_checked,
             }
         else:
-
             self.custom_folders[folder_name]["path"] = new_path
 
         self._refresh_folder_ui()
@@ -594,20 +652,27 @@ class FolderSelector:
 
     def _update_default_paths(self, *args):
         scale = self.comp_scale.get()
-        scale_config = self.path_config.get_scale_config(scale)
+        scale_config = self.path_config.get_image_comparison_scale_config(scale)
 
-        self.folder_vars["lr"].set(scale_config.get("lr_dir", ""))
-        self.folder_vars["hr"].set(scale_config.get("hr_dir", ""))
-        self.folder_vars["bicubic"].set(scale_config.get("bicubic_dir", ""))
+        # 自動入力は常に有効
+        for folder_type in ["lr", "bicubic", "hr"]:
+            new_path = scale_config.get(f"{folder_type}_dir", "")
+            if new_path:
+                self.folder_vars[folder_type].set(new_path)
+                self.log(
+                    f"スケール{scale}: {folder_type}フォルダを自動更新 -> {new_path}"
+                )
 
     def get_all_folders(self):
         folder_dict = {}
 
+        # 基本フォルダ（「含める」設定を確認）
         for key, var in self.folder_vars.items():
             path = var.get().strip()
-            if path and os.path.isdir(path):
+            if path and os.path.isdir(path) and self.include_type_vars[key].get():
                 folder_dict[key] = path
 
+        # カスタムフォルダ（常に含める）
         for name, info in self.custom_folders.items():
             path = info["path"]
             checked = info["checked"]
@@ -621,11 +686,14 @@ class FolderSelector:
 
         paths_config = {
             "lr_dir": self.folder_vars["lr"].get(),
-            "hr_dir": self.folder_vars["hr"].get(),
             "bicubic_dir": self.folder_vars["bicubic"].get(),
+            "hr_dir": self.folder_vars["hr"].get(),
         }
 
-        self.path_config.update_scale_config(scale, paths_config)
+        self.path_config.update_image_comparison_scale_config(scale, paths_config)
         self.path_config.save_custom_folder_history(self.custom_folders)
+        self._save_include_type_settings()
 
-        self.log(f"スケール {scale} の比較パス設定とカスタムフォルダ履歴を保存しました")
+        self.log(
+            f"スケール {scale} の比較パス設定、カスタムフォルダ履歴、表示設定を保存しました"
+        )
