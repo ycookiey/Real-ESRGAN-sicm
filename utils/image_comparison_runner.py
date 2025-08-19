@@ -3,6 +3,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import threading
 import traceback
+import subprocess
+import platform
 
 from image_comparator import ImageComparator
 
@@ -66,14 +68,75 @@ class ComparisonRunner:
         )
         self.comparison_log.grid(row=0, column=0, sticky="nsew")
         self.comparison_log.config(state=tk.DISABLED)
+        
+        # クリック可能なリンクのタグを設定
+        self.comparison_log.tag_config("link", foreground="blue", underline=True)
+        self.comparison_log.tag_bind("link", "<Button-1>", self._on_link_click)
+        self.comparison_log.tag_bind("link", "<Enter>", lambda e: self.comparison_log.config(cursor="hand2"))
+        self.comparison_log.tag_bind("link", "<Leave>", lambda e: self.comparison_log.config(cursor=""))
 
         return log_frame
 
-    def _log_message(self, message):
+    def _on_link_click(self, event):
+        """リンクがクリックされた時の処理"""
+        # カーソル位置を取得
+        index = self.comparison_log.index(tk.CURRENT)
+        
+        # リンクタグの範囲を取得
+        tag_ranges = self.comparison_log.tag_ranges("link")
+        
+        # クリックされた位置がリンクタグの範囲内かチェック
+        for i in range(0, len(tag_ranges), 2):
+            start = tag_ranges[i]
+            end = tag_ranges[i + 1]
+            if self.comparison_log.compare(start, "<=", index) and self.comparison_log.compare(index, "<", end):
+                # リンクテキストを取得
+                link_text = self.comparison_log.get(start, end)
+                self._open_folder(link_text.strip())
+                break
 
+    def _open_folder(self, folder_path):
+        """フォルダをエクスプローラーで開く"""
+        try:
+            if os.path.exists(folder_path):
+                if platform.system() == "Windows":
+                    os.startfile(folder_path)
+                elif platform.system() == "Darwin":  # macOS
+                    subprocess.run(["open", folder_path])
+                else:  # Linux
+                    subprocess.run(["xdg-open", folder_path])
+                self._log_message(f"フォルダを開きました: {folder_path}")
+            else:
+                self._log_message(f"フォルダが存在しません: {folder_path}")
+        except Exception as e:
+            self._log_message(f"フォルダを開く際にエラーが発生しました: {e}")
+
+    def _log_message(self, message, is_link=False, link_path=None):
+        """ログメッセージを出力（クリック可能なリンク対応）"""
         if hasattr(self, "comparison_log") and self.comparison_log.winfo_exists():
             self.comparison_log.config(state=tk.NORMAL)
-            self.comparison_log.insert(tk.END, str(message) + "\n")
+            
+            if is_link and link_path:
+                # リンク以外の部分を先に挿入
+                parts = str(message).split(link_path)
+                if len(parts) == 2:
+                    # 前半部分を挿入
+                    self.comparison_log.insert(tk.END, parts[0])
+                    
+                    # リンク部分を挿入（リンクタグ付き）
+                    start = self.comparison_log.index(tk.END + "-1c")
+                    self.comparison_log.insert(tk.END, link_path)
+                    end = self.comparison_log.index(tk.END + "-1c")
+                    self.comparison_log.tag_add("link", start, end)
+                    
+                    # 後半部分を挿入
+                    self.comparison_log.insert(tk.END, parts[1] + "\n")
+                else:
+                    # パスが見つからない場合は通常のメッセージとして挿入
+                    self.comparison_log.insert(tk.END, str(message) + "\n")
+            else:
+                self.comparison_log.insert(tk.END, str(message) + "\n")
+            
             self.comparison_log.see(tk.END)
             self.comparison_log.config(state=tk.DISABLED)
             self.root.update_idletasks()
@@ -128,7 +191,7 @@ class ComparisonRunner:
             self._log_message(f"目標サイズ: {target_width}x{target_height}")
             self._log_message(f"表示倍率: {scale_factor}")
             if output_dir:
-                self._log_message(f"出力ディレクトリ: {output_dir}")
+                self._log_message(f"出力ディレクトリ: {output_dir}", is_link=True, link_path=output_dir)
             self._log_message("\n処理開始...")
 
             comparator = ImageComparator(
@@ -212,7 +275,7 @@ class ComparisonRunner:
 
             self._log_message(f"\n{len(file_groups)}個の画像グループを比較しました。")
             if output_dir:
-                self._log_message(f"比較結果を {output_dir} に保存しました。")
+                self._log_message(f"比較結果を {output_dir} に保存しました。", is_link=True, link_path=output_dir)
 
             self.preview_panel.display_images(visualizations, scale_factor)
 

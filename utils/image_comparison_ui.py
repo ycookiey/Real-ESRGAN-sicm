@@ -34,7 +34,7 @@ class ImageComparisonUI:
         )
         self.folder_selector.frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
-        self.parameters_panel = ParametersPanel(main_frame, self.root)
+        self.parameters_panel = ParametersPanel(main_frame, self.root, self.path_config)
         self.parameters_panel.frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
         self.preview_panel = PreviewPanel(main_frame)

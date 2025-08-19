@@ -4,9 +4,10 @@ from tkinter import ttk
 
 class ParametersPanel:
 
-    def __init__(self, parent, root):
+    def __init__(self, parent, root, path_config=None):
         self.parent = parent
         self.root = root
+        self.path_config = path_config
 
         self.frame = self._create_parameters_frame()
 
@@ -59,7 +60,9 @@ class ParametersPanel:
         ttk.Label(params_frame, text="出力ディレクトリ:").grid(
             row=2, column=0, sticky=tk.W, pady=2
         )
-        self.output_dir = tk.StringVar()
+        # デフォルト出力先を設定
+        default_output_dir = self._get_default_output_dir()
+        self.output_dir = tk.StringVar(value=default_output_dir)
         output_dir_frame = ttk.Frame(params_frame)
         output_dir_frame.grid(row=2, column=1, sticky=tk.EW, pady=2)
         output_dir_frame.columnconfigure(0, weight=1)
@@ -72,6 +75,18 @@ class ParametersPanel:
         ).grid(row=0, column=1, padx=(5, 0))
 
         return params_frame
+
+    def _get_default_output_dir(self):
+        """デフォルト出力ディレクトリを取得"""
+        import os
+        
+        if self.path_config:
+            working_dir = self.path_config.get_path("working_dir")
+            if working_dir and os.path.exists(working_dir):
+                return os.path.join(working_dir, "comparison_results")
+        
+        # path_configが無い場合は現在のディレクトリを使用
+        return os.path.join(os.getcwd(), "comparison_results")
 
     def _browse_directory(self):
         from tkinter import filedialog
