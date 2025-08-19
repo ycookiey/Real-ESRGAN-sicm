@@ -93,6 +93,8 @@ class InferenceControls:
 
             self._prepare_for_run()
             self._log_pretrained_settings(p_manual, pretrained_model_path)
+            
+            self.root.update_idletasks()
 
             success = run_realesrgan_inference(
                 pattern_num=p_manual["pattern_num"],
@@ -113,16 +115,18 @@ class InferenceControls:
 
             if success:
                 self.log("\n事前訓練済みモデル推論 正常完了。")
+                self.progress_var.set(100)
+                self.progress_label.config(text="完了")
+                self.root.update_idletasks()
                 messagebox.showinfo(
                     "完了",
                     "事前訓練済みモデルでの推論が正常に完了しました。",
                     parent=self.root,
                 )
-                self.progress_var.set(100)
-                self.progress_label.config(text="完了")
             else:
                 self.log("\n事前訓練済みモデル推論中にエラーが発生しました。")
                 self.progress_label.config(text="エラー")
+                self.root.update_idletasks()
 
         except Exception as e:
             self.log(f"事前訓練済みモデル推論エラー: {str(e)}")
@@ -397,6 +401,8 @@ class InferenceControls:
             self.log(f"\n=== {log_prefix}: Epoch {epoch} 開始 ===")
             if p_manual["execution_mode"] == "single":
                 self.progress_label.config(text="実行中...")
+            
+            self.root.update_idletasks()
 
             success = run_realesrgan_inference(
                 p_manual["pattern_num"],
@@ -442,15 +448,17 @@ class InferenceControls:
     def _finalize_run(self, all_success, execution_mode, final_progress):
         if all_success:
             self.log("\n全処理 正常完了。")
-            messagebox.showinfo(
-                "完了", "全ての要求された処理が正常に完了しました。", parent=self.root
-            )
             self.progress_var.set(100)
             final_text = "100%" if execution_mode == "range" else "完了"
             self.progress_label.config(text=final_text)
+            self.root.update_idletasks()
+            messagebox.showinfo(
+                "完了", "全ての要求された処理が正常に完了しました。", parent=self.root
+            )
         else:
             self.log("\n処理中にエラーが発生しました。")
             if execution_mode == "range":
                 self.progress_label.config(text=f"{int(final_progress)}% (エラー)")
             else:
                 self.progress_label.config(text="エラー")
+            self.root.update_idletasks()
