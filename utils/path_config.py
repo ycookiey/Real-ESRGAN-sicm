@@ -370,14 +370,19 @@ class PathConfig:
         for name, info in folders_dict.items():
             path = info.get("path", "")
             checked = info.get("checked", True)
+            order = info.get("order", 0)  # 並び順情報を取得
             if os.path.isdir(path):
-                history.append({"name": name, "path": path, "checked": checked})
+                history.append({"name": name, "path": path, "checked": checked, "order": order})
+
+        # 並び順でソート
+        history.sort(key=lambda x: x.get("order", 0))
 
         existing_history = self.get_custom_folder_history()
         for item in existing_history:
             name = item.get("name", "")
             path = item.get("path", "")
             checked = item.get("checked", True)
+            order = item.get("order", len(history))  # 既存アイテムには最後尾の順序を設定
 
             if (
                 name
@@ -387,7 +392,7 @@ class PathConfig:
                 )
             ):
                 if os.path.isdir(path):
-                    history.append({"name": name, "path": path, "checked": checked})
+                    history.append({"name": name, "path": path, "checked": checked, "order": order})
 
         self.config["custom_folder_history"] = history
         return self.save_config(self.config)

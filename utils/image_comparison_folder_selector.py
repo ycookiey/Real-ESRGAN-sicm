@@ -86,6 +86,7 @@ class FolderSelector:
 
         self.custom_folders = {}
         self.custom_folder_checkbuttons = {}
+        self.folder_order = []  # フォルダの表示順を管理するリスト
 
         self.include_type_vars = {
             "lr": tk.BooleanVar(value=True),
@@ -329,24 +330,32 @@ class FolderSelector:
 
         self.custom_folders.clear()
         self.custom_folder_checkbuttons.clear()
+        self.folder_order.clear()
 
         history = self.path_config.get_custom_folder_history()
         self.log(f"カスタムフォルダ履歴を読み込み: {len(history)}件")
 
-        for i, item in enumerate(history):
+        for item in history:
             name = item.get("name")
             path = item.get("path")
             checked = item.get("checked", True)
+            order = item.get("order", len(self.folder_order))  # 順序情報を取得
 
             if name and path:
                 if os.path.isdir(path):
-                    self.custom_folders[name] = {"path": path, "checked": checked}
-                    self._add_folder_to_ui(name, path, checked, i)
+                    self.custom_folders[name] = {"path": path, "checked": checked, "order": order}
+                    self.folder_order.append(name)
                     self.log(
-                        f"カスタムフォルダを追加: {name} -> {path} (選択状態: {checked})"
+                        f"カスタムフォルダを追加: {name} -> {path} (選択状態: {checked}, 順序: {order})"
                     )
                 else:
                     self.log(f"無効なパスのためスキップ: {name} -> {path}")
+
+        # 順序でソート
+        self.folder_order.sort(key=lambda name: self.custom_folders[name].get("order", 0))
+        
+        # UI を再構築
+        self._refresh_folder_ui()
 
         if self.custom_folders:
             self.path_config.save_custom_folder_history(self.custom_folders)
@@ -373,13 +382,37 @@ class FolderSelector:
         def edit_this_folder():
             self._edit_specific_folder(name)
 
+        # 上移動ボタン
+        def move_up():
+            self._move_folder_up(name)
+
+        up_button = ttk.Button(
+            folder_frame,
+            text="↑",
+            width=3,
+            command=move_up,
+        )
+        up_button.grid(row=0, column=1, padx=(5, 0), sticky=tk.E)
+
+        # 下移動ボタン
+        def move_down():
+            self._move_folder_down(name)
+
+        down_button = ttk.Button(
+            folder_frame,
+            text="↓",
+            width=3,
+            command=move_down,
+        )
+        down_button.grid(row=0, column=2, padx=(2, 0), sticky=tk.E)
+
         edit_button = ttk.Button(
             folder_frame,
             text="✏",
             width=3,
             command=edit_this_folder,
         )
-        edit_button.grid(row=0, column=1, padx=(5, 0), sticky=tk.E)
+        edit_button.grid(row=0, column=3, padx=(2, 0), sticky=tk.E)
 
         def delete_this_folder():
             self._delete_specific_folder(name)
@@ -390,12 +423,14 @@ class FolderSelector:
             width=3,
             command=delete_this_folder,
         )
-        delete_button.grid(row=0, column=2, padx=(2, 0), sticky=tk.E)
+        delete_button.grid(row=0, column=4, padx=(2, 0), sticky=tk.E)
 
         self.custom_folder_checkbuttons[name] = {
             "checkbutton": checkbutton,
             "var": check_var,
             "frame": folder_frame,
+            "up_button": up_button,
+            "down_button": down_button,
             "edit_button": edit_button,
             "delete_button": delete_button,
         }
@@ -424,10 +459,11 @@ class FolderSelector:
             )
             return
 
-        self.custom_folders[name] = {"path": path, "checked": True}
+        order = len(self.folder_order)  # 新しいフォルダは最後に追加
+        self.custom_folders[name] = {"path": path, "checked": True, "order": order}
+        self.folder_order.append(name)
 
-        next_index = len(self.custom_folder_checkbuttons)
-        self._add_folder_to_ui(name, path, True, next_index)
+        self._refresh_folder_ui()
 
         self.path_config.update_custom_folder_history(name, path, True)
 
@@ -477,10 +513,16 @@ class FolderSelector:
             return
 
         if new_name != folder_name:
+            # 名前が変更された場合、順序リストも更新
+            folder_index = self.folder_order.index(folder_name)
+            self.folder_order[folder_index] = new_name
+            
+            current_order = self.custom_folders[folder_name]["order"]
             del self.custom_folders[folder_name]
             self.custom_folders[new_name] = {
                 "path": new_path,
                 "checked": current_checked,
+                "order": current_order,
             }
         else:
             self.custom_folders[folder_name]["path"] = new_path
@@ -511,6 +553,10 @@ class FolderSelector:
             self.custom_folder_checkbuttons[folder_name]["frame"].destroy()
             del self.custom_folder_checkbuttons[folder_name]
 
+        # 順序リストからも削除
+        if folder_name in self.folder_order:
+            self.folder_order.remove(folder_name)
+        
         del self.custom_folders[folder_name]
         self._refresh_folder_ui()
         self.log(f"カスタムフォルダを削除: {folder_name}")
@@ -625,10 +671,13 @@ class FolderSelector:
 
         self.custom_folder_checkbuttons.clear()
 
-        for i, (name, folder_info) in enumerate(self.custom_folders.items()):
-            path = folder_info["path"]
-            checked = folder_info["checked"]
-            self._add_folder_to_ui(name, path, checked, i)
+        # 順序に従って UI を再構築
+        for i, name in enumerate(self.folder_order):
+            if name in self.custom_folders:
+                folder_info = self.custom_folders[name]
+                path = folder_info["path"]
+                checked = folder_info["checked"]
+                self._add_folder_to_ui(name, path, checked, i)
 
         self.folders_canvas.configure(scrollregion=self.folders_canvas.bbox("all"))
 
@@ -680,6 +729,60 @@ class FolderSelector:
                 folder_dict[name] = path
 
         return folder_dict
+
+    def _move_folder_up(self, folder_name):
+        """フォルダを上に移動"""
+        if folder_name not in self.folder_order:
+            return
+        
+        current_index = self.folder_order.index(folder_name)
+        
+        # すでに最上位の場合は何もしない
+        if current_index == 0:
+            return
+        
+        # 上のアイテムと位置を交換
+        self.folder_order[current_index], self.folder_order[current_index - 1] = \
+            self.folder_order[current_index - 1], self.folder_order[current_index]
+        
+        # order値を更新
+        for i, name in enumerate(self.folder_order):
+            self.custom_folders[name]["order"] = i
+        
+        # UI を再構築
+        self._refresh_folder_ui()
+        
+        # 設定を保存
+        self.path_config.save_custom_folder_history(self.custom_folders)
+        
+        self.log(f"カスタムフォルダを上に移動: {folder_name}")
+
+    def _move_folder_down(self, folder_name):
+        """フォルダを下に移動"""
+        if folder_name not in self.folder_order:
+            return
+        
+        current_index = self.folder_order.index(folder_name)
+        
+        # すでに最下位の場合は何もしない
+        if current_index == len(self.folder_order) - 1:
+            return
+        
+        # 下のアイテムと位置を交換
+        self.folder_order[current_index], self.folder_order[current_index + 1] = \
+            self.folder_order[current_index + 1], self.folder_order[current_index]
+        
+        # order値を更新
+        for i, name in enumerate(self.folder_order):
+            self.custom_folders[name]["order"] = i
+        
+        # UI を再構築
+        self._refresh_folder_ui()
+        
+        # 設定を保存
+        self.path_config.save_custom_folder_history(self.custom_folders)
+        
+        self.log(f"カスタムフォルダを下に移動: {folder_name}")
 
     def save_comparison_paths(self):
         scale = self.comp_scale.get()
