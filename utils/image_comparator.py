@@ -298,7 +298,7 @@ class ImageComparator:
                         )
 
             vis_img = self.create_comparison_visualization(
-                true_name, display_images, results["metrics"].get(true_name, {})
+                true_name, display_images, results["metrics"].get(true_name, {}), list(folder_dict.keys())
             )
             results["visualizations"][true_name] = vis_img
 
@@ -324,20 +324,29 @@ class ImageComparator:
         true_name: str,
         images: Dict[str, np.ndarray],
         metrics: Dict[str, Dict[str, float]],
+        category_order: Optional[List[str]] = None,
     ) -> np.ndarray:
-        preferred_order = ["lr", "bicubic", "hr"]
+        if category_order:
+            # 指定された順序に従ってカテゴリを並び替え
+            categories = [cat for cat in category_order if cat in images]
+            # 順序に無いカテゴリがあれば最後に追加
+            remaining = [cat for cat in images.keys() if cat not in categories]
+            categories.extend(remaining)
+        else:
+            # フォールバック: 従来の固定順序
+            preferred_order = ["lr", "bicubic", "hr"]
 
-        def sort_key(category):
-            if category == "lr":
-                return 0
-            elif category == "bicubic":
-                return 1
-            elif category == "hr":
-                return 1000
-            else:
-                return 500
+            def sort_key(category):
+                if category == "lr":
+                    return 0
+                elif category == "bicubic":
+                    return 1
+                elif category == "hr":
+                    return 1000
+                else:
+                    return 500
 
-        categories = sorted(images.keys(), key=sort_key)
+            categories = sorted(images.keys(), key=sort_key)
 
         n_images = len(categories)
         fig_width = n_images * 4

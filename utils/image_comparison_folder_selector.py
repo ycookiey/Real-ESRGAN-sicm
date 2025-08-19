@@ -2,6 +2,7 @@ import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 from typing import Dict, Callable, Any
+from collections import OrderedDict
 
 
 class FolderEditDialog(simpledialog.Dialog):
@@ -713,20 +714,24 @@ class FolderSelector:
                 )
 
     def get_all_folders(self):
-        folder_dict = {}
+        folder_dict = OrderedDict()
 
-        # 基本フォルダ（「含める」設定を確認）
-        for key, var in self.folder_vars.items():
-            path = var.get().strip()
-            if path and os.path.isdir(path) and self.include_type_vars[key].get():
-                folder_dict[key] = path
+        # 基本フォルダを固定順序で追加（「含める」設定を確認）
+        basic_folder_order = ["lr", "bicubic", "hr"]
+        for key in basic_folder_order:
+            if key in self.folder_vars:
+                path = self.folder_vars[key].get().strip()
+                if path and os.path.isdir(path) and self.include_type_vars[key].get():
+                    folder_dict[key] = path
 
-        # カスタムフォルダ（常に含める）
-        for name, info in self.custom_folders.items():
-            path = info["path"]
-            checked = info["checked"]
-            if checked and os.path.isdir(path):
-                folder_dict[name] = path
+        # カスタムフォルダを並び順に従って追加
+        for name in self.folder_order:
+            if name in self.custom_folders:
+                info = self.custom_folders[name]
+                path = info["path"]
+                checked = info["checked"]
+                if checked and os.path.isdir(path):
+                    folder_dict[name] = path
 
         return folder_dict
 
