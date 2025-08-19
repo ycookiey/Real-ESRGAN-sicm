@@ -140,3 +140,4 @@ dmypy.json
 .pyre/
 .history/
 utils/path_config.json
+comparison_results/
